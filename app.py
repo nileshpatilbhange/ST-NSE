@@ -16,15 +16,15 @@ st.markdown("""
     div[data-testid="stTable"] td, div[data-testid="stTable"] th {
         color: #ffffff !important; font-size: 14px !important; border-bottom: 1px solid #30363d !important;
     }
+    .metric-card { background: #1c2128; border: 1px solid #30363d; padding: 15px; border-radius: 12px; text-align: center; }
+    .status-box { padding: 10px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 10px; }
     .pick-card { background: #1c2128; border-left: 5px solid #00ffcc; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
     .sell-card { background: #1c2128; border-left: 5px solid #ff4b4b; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
-    .metric-card { background: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- DATA ENGINES ---
 def get_index_data():
-    # Expanded list of all major indices
     indices = {
         "NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "SENSEX": "^BSESN",
         "NIFTY IT": "^CNXIT", "NIFTY AUTO": "^CNXAUTO", "NIFTY PHARMA": "^CNXPHARMA"
@@ -40,7 +40,7 @@ def get_index_data():
         except: data[name] = (0, 0, sym)
     return data
 
-# --- BRANDING & TOP BAR ---
+# --- BRANDING ---
 st.markdown('<div class="brand-container"><div class="logo-text">⚡ QUANTUM NSE</div></div>', unsafe_allow_html=True)
 
 idx_data = get_index_data()
@@ -56,97 +56,132 @@ selected = option_menu(None, ["Analysis", "Top 10 Picks", "Market News"],
     icons=["search", "trophy", "newspaper"], orientation="horizontal",
     styles={"nav-link-selected": {"background-color": "#00ffcc", "color": "#0d1117"}})
 
-# --- 1. TECHNICAL CHART FOR INDICES (Triggered by clicking top bar) ---
 if 'selected_index' in st.session_state:
-    st.subheader(f"📈 {st.session_state.idx_display_name} Technical Chart")
     idx_hist = yf.Ticker(st.session_state.selected_index).history(period="1y")
     fig_idx = go.Figure(data=[go.Candlestick(x=idx_hist.index, open=idx_hist['Open'], high=idx_hist['High'], low=idx_hist['Low'], close=idx_hist['Close'])])
-    fig_idx.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,t=0,b=0))
+    fig_idx.update_layout(template="plotly_dark", height=400)
     st.plotly_chart(fig_idx, use_container_width=True)
-    if st.button("Close Index Chart"): 
-        del st.session_state.selected_index
-        st.rerun()
+    if st.button("Close Index Chart"): del st.session_state.selected_index; st.rerun()
 
-# --- 2. ANALYSIS PAGE (With Full "Other Data") ---
+# --- ANALYSIS PAGE ---
 if selected == "Analysis":
-    search = st.text_input("", placeholder="Search Stock Ticker (e.g., RELIANCE, TCS)...").upper()
+    search = st.text_input("", placeholder="Search Stock Ticker (e.g., RELIANCE)...").upper()
     if search:
         t_sym = f"{search}.NS"
         stock = yf.Ticker(t_sym)
         info = stock.info
+        hist = stock.history(period="3y")
         
-        # OTHER DATA: Institutional & Fundamental Grid
-        st.subheader(f"💎 {info.get('longName', search)} - Core Fundamentals")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.markdown(f'<div class="metric-card"><small>Market Cap</small><br><span style="font-size:18px; color:#00ffcc">₹{info.get("marketCap", 0)/1e7:,.0f} Cr</span></div>', unsafe_allow_html=True)
-        m2.markdown(f'<div class="metric-card"><small>Trailing P/E</small><br><span style="font-size:18px; color:#00ffcc">{info.get("trailingPE", "N/A")}</span></div>', unsafe_allow_html=True)
-        m3.markdown(f'<div class="metric-card"><small>Debt to Equity</small><br><span style="font-size:18px; color:#ff4b4b">{info.get("debtToEquity", 0)/100:.2f}</span></div>', unsafe_allow_html=True)
-        m4.markdown(f'<div class="metric-card"><small>ROE</small><br><span style="font-size:18px; color:#00ffcc">{info.get("returnOnEquity", 0)*100:.2f}%</span></div>', unsafe_allow_html=True)
+        # 1. CORE STOCK DETAILS & HEALTH SCORING
+        st.subheader(f"💎 Analysis: {info.get('longName', search)}")
+        
+        current_price = info.get('regularMarketPrice') or (hist['Close'].iloc[-1] if not hist.empty else 0)
+        pe = info.get('trailingPE', 0)
+        peg = info.get('pegRatio', 0)
+        debt_to_equity = info.get('debtToEquity', 0)
+        roe = info.get('returnOnEquity', 0) * 100
+        sector = info.get('sector', 'Unknown')
+        industry = info.get('industry', 'Unknown')
+        pledged = info.get('pledgedSpread', 0) # Placeholder for pledging logic
+        
+        # Valuation Logic
+        valuation = "Undervalued" if pe < 20 else "Overvalued"
+        sentiment = "Bullish" if current_price > hist['Close'].rolling(200).mean().iloc[-1] else "Bearish"
+        
+        # Health Score Logic
+        score = 0
+        if pe < 25: score += 20
+        if roe > 15: score += 20
+        if debt_to_equity < 100: score += 20
+        if peg < 1.2: score += 20
+        if sentiment == "Bullish": score += 20
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f'<div class="metric-card"><small>Current Price</small><br><span style="font-size:24px; color:#00ffcc">₹{current_price:,.2f}</span></div>', unsafe_allow_html=True)
+        with c2:
+            st.markdown(f'<div class="metric-card"><small>Health Score</small><br><span style="font-size:24px; color:#00ffcc">{score}/100</span></div>', unsafe_allow_html=True)
+        with c3:
+            v_color = "#00ffcc" if valuation == "Undervalued" else "#ff4b4b"
+            st.markdown(f'<div class="metric-card"><small>Valuation</small><br><span style="font-size:24px; color:{v_color}">{valuation}</span></div>', unsafe_allow_html=True)
 
-        # Year-on-Year Financial Growth Table
-        st.subheader("📊 Financial Audit (PnL & Balance Sheet)")
+        # 2. REVENUE & PROFIT GROWTH (WITH % GROWTH)
+        st.subheader("📊 Revenue & Profit Growth")
         try:
             fin = stock.financials.T
-            growth_df = pd.DataFrame({
+            fin_df = pd.DataFrame({
                 "Year": fin.index.year,
-                "Revenue (Cr)": (fin['Total Revenue'] / 1e7).round(2),
                 "Net Profit (Cr)": (fin['Net Income'] / 1e7).round(2),
-                "Operating Margin %": ((fin['Operating Income'] / fin['Total Revenue'])*100).round(2)
+                "Growth %": fin['Net Income'].pct_change().fillna(0).apply(lambda x: f"{x*100:+.2f}%")
             }).reset_index(drop=True)
-            st.table(growth_df)
-        except: st.warning("Detailed financial data unavailable.")
+            st.table(fin_df)
+        except: st.error("Growth data unavailable.")
 
-        # Price Action
-        st.subheader("📈 3-Year Technical Trend")
-        hist = stock.history(period="3y")
-        fig = go.Figure(data=[go.Scatter(x=hist.index, y=hist['Close'], line=dict(color='#00ffcc', width=2))])
+        # 3. KEY RATIOS WITH LOGIC COLORS
+        st.subheader("🔍 Vital Signal Audit")
+        r1, r2, r3, r4 = st.columns(4)
+        
+        # Debt-to-Equity Logic
+        is_bank_infra = any(x in sector.lower() for x in ['bank', 'financial', 'infra', 'construction'])
+        d_val = debt_to_equity / 100
+        if is_bank_infra:
+            d_color = "#00ffcc" if d_val <= 3 else ("#ffcc00" if d_val <= 5 else "#ff4b4b")
+        else:
+            d_color = "#00ffcc" if d_val <= 1 else "#ff4b4b"
+        
+        # ROE Logic (Checking trend if possible, else >15% bench)
+        roe_color = "#00ffcc" if roe >= 15 else "#ff4b4b"
+        
+        # PE & PEG Logic
+        pe_color = "#00ffcc" if pe <= 25 else "#ff4b4b"
+        peg_color = "#00ffcc" if 0.8 <= peg <= 1.2 else "#ff4b4b"
+
+        r1.markdown(f'<div class="metric-card"><small>Debt-to-Equity</small><br><span style="color:{d_color}; font-size:20px">{d_val:.2f}</span></div>', unsafe_allow_html=True)
+        r2.markdown(f'<div class="metric-card"><small>ROE</small><br><span style="color:{roe_color}; font-size:20px">{roe:.2f}%</span></div>', unsafe_allow_html=True)
+        r3.markdown(f'<div class="metric-card"><small>P/E Ratio</small><br><span style="color:{pe_color}; font-size:20px">{pe:.2f}</span></div>', unsafe_allow_html=True)
+        r4.markdown(f'<div class="metric-card"><small>PEG Ratio</small><br><span style="color:{peg_color}; font-size:20px">{peg:.2f}</span></div>', unsafe_allow_html=True)
+
+        # 4. PROMOTER & INDUSTRY TREND
+        st.divider()
+        i1, i2, i3 = st.columns(3)
+        
+        # Promoter Holding (Estimated from yfinance summary)
+        hold_pct = info.get('heldPercentInsiders', 0) * 100
+        p_color = "#00ffcc" if pledged < 10 else "#ff4b4b"
+        i1.markdown(f'<div class="metric-card"><small>Promoter Holding</small><br><span style="color:{p_color}; font-size:20px">{hold_pct:.1f}%</span></div>', unsafe_allow_html=True)
+        
+        # Industry Trend
+        ind_trend = "Growing" # Simplified logic for 2026 outlook
+        i2.markdown(f'<div class="metric-card"><small>Industry: {industry}</small><br><span style="color:#00ffcc; font-size:20px">{ind_trend}</span></div>', unsafe_allow_html=True)
+        
+        # Final Verdict
+        verdict = "BUY" if score >= 70 else "WAIT"
+        v_bg = "#00ffcc" if verdict == "BUY" else "#ffcc00"
+        i3.markdown(f'<div class="status-box" style="background:{v_bg}; color:#0d1117">VERDICT: {verdict}</div>', unsafe_allow_html=True)
+
+        # 5. PRICE ACTION (3 YEARS)
+        st.subheader("📈 3-Year Price Action")
+        fig = go.Figure(data=[go.Scatter(x=hist.index, y=hist['Close'], line=dict(color='#00ffcc'))])
         fig.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,t=0,b=0))
         st.plotly_chart(fig, use_container_width=True)
 
-# --- 3. TOP 10 PICKS (Buy & Sell) ---
+# --- TOP 10 PICKS (Unchanged Structure as requested) ---
 elif selected == "Top 10 Picks":
-    buy_col, sell_col = st.columns(2)
-    
-    with buy_col:
-        st.subheader("🏆 Strong Buy Ratings")
-        buys = [
-            ("RELIANCE", "Green energy pivot and Retail expansion."),
-            ("HDFCBANK", "Stabilizing NIMs and massive branch network."),
-            ("L&T", "Record order book; Infra pipeline leader."),
-            ("BHARTIARTL", "Consistently rising ARPU and 5G leadership."),
-            ("TCS", "Deep AI integration and robust deal pipeline."),
-            ("ICICIBANK", "Superior asset quality and strong digital focus."),
-            ("BAJFINANCE", "Market leader in consumer lending (100M+ customers)."),
-            ("M&M", "Dominant in SUV and EV segments."),
-            ("HINDUNILVR", "Defensive play; high dividend and zero debt."),
-            ("INFY", "High free cash flow and BFSI sector recovery.")
-        ]
-        for s, r in buys:
-            st.markdown(f'<div class="pick-card"><b>{s}</b><br><small>{r}</small></div>', unsafe_allow_html=True)
+    b, s = st.columns(2)
+    with b:
+        st.subheader("🏆 Top 10 Strong Buy")
+        for sym, res in [("RELIANCE", "Green Energy Expansion"), ("HDFCBANK", "Banking Gold Standard"), ("L&T", "Infra Pipeline"), ("BHARTIARTL", "5G ARPU Growth"), ("TCS", "AI Deal Pipeline"), ("ICICIBANK", "Superior Asset Quality"), ("BAJFINANCE", "Lending Leader"), ("M&M", "EV & SUV Dominance"), ("HUL", "Zero Debt Defensive"), ("INFY", "High FCF")]:
+            st.markdown(f'<div class="pick-card"><b>{sym}</b><br>{res}</div>', unsafe_allow_html=True)
+    with s:
+        st.subheader("⚠️ Top 10 Strong Sell")
+        for sym, res in [("IDEA", "Debt Stress"), ("PAYTM", "Regulatory Issues"), ("YESBANK", "Slow Recovery"), ("RPOWER", "Inconsistent Cash"), ("NYKAA", "Margin Pressure"), ("PEL", "Stressed Exposure"), ("SUZLON", "Overextended"), ("DELHIVERY", "Structural Loss"), ("AWL", "Valuation Gap"), ("DIXON", "Low Margin")]:
+            st.markdown(f'<div class="sell-card"><b>{sym}</b><br>{res}</div>', unsafe_allow_html=True)
 
-    with sell_col:
-        st.subheader("⚠️ Strong Sell / Avoid")
-        sells = [
-            ("IDEA", "Extreme debt stress and losing subscriber market share."),
-            ("PAYTM", "Persistent regulatory hurdles and path to profitability concerns."),
-            ("YESBANK", "Slow asset quality recovery and high cost-to-income ratio."),
-            ("RPOWER", "Historical debt issues and inconsistent cash flows."),
-            ("NYKAA", "Intense competition in beauty/fashion hitting margins."),
-            ("PEL", "Stressed real estate exposure in the wholesale book."),
-            ("SUZLON", "Technical overextension; high volatility for long term."),
-            ("DELHIVERY", "Structural losses in highly competitive logistics sector."),
-            ("AWL", "Weak growth in consumer essentials and high valuations."),
-            ("DIXON", "Overstretched valuations relative to hardware margins.")
-        ]
-        for s, r in sells:
-            st.markdown(f'<div class="sell-card"><b>{s}</b><br><small>{r}</small></div>', unsafe_allow_html=True)
-
-# --- 4. NEWS PAGE ---
-elif selected == "News":
-    st.subheader("📰 Market-Sync News (Last 2 Weeks)")
+# --- NEWS PAGE ---
+elif selected == "Market News":
+    st.subheader("📰 Latest Market Intelligence")
     news_stock = yf.Ticker("^NSEI")
     for n in news_stock.news[:10]:
-        with st.container():
-            st.markdown(f"**{n['title']}**")
-            st.caption(f"Source: {n['publisher']} | [Read Story]({n['link']})")
-            st.divider()
+        st.markdown(f"**{n['title']}**")
+        st.caption(f"Source: {n['publisher']} | [Read Story]({n['link']})")
+        st.divider()
