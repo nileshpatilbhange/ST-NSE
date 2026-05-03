@@ -1,143 +1,104 @@
 import streamlit as st
+import requests
 import pandas as pd
 import plotly.graph_objects as go
-from streamlit_option_menu import option_menu
-import requests
 
-# --- CONFIGURATION & API KEY ---
-EOD_API_KEY = "69f6f6918a0d60.33244408"
+# --- CONFIGURATION ---
+EOD_API_KEY = "YOUR_EODHD_API_KEY"  # Replace with your actual key
 BASE_URL = "https://eodhd.com/api"
 
-# --- UI CONFIGURATION ---
-st.set_page_config(page_title="QUANTUM NSE | EODHD AI", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Indian Market Analyzer", layout="wide")
 
-# --- CUSTOM CSS ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #0d1117; color: #ffffff; }
-    .brand-container { text-align: center; padding: 20px 0; background: #161b22; border-radius: 0 0 30px 30px; border-bottom: 1px solid #30363d; margin-bottom: 20px; }
-    .logo-text { font-size: 38px; font-weight: 800; color: #00ffcc; margin: 0; }
-    .stat-box { background: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
-    .metric-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-value { font-size: 20px; font-weight: bold; margin-top: 5px; color: #ffffff; }
-    div[data-testid="stTable"] td, div[data-testid="stTable"] th { 
-        color: #ffffff !important; font-size: 15px !important; border-bottom: 1px solid #30363d !important; 
-    }
-    .pick-card { background: #1c2128; border-left: 5px solid #00ffcc; padding: 12px; margin-bottom: 10px; border-radius: 5px; }
-    .sell-card { background: #1c2128; border-left: 5px solid #ff4b4b; padding: 12px; margin-bottom: 10px; border-radius: 5px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- DATA ENGINE ---
-@st.cache_data(ttl=600)
-def get_eod_indices():
-    # EODHD Indices symbols for India
-    indices = {"NIFTY 50": "NSEI.INDX", "SENSEX": "BSESN.INDX"}
-    results = {}
-    for name, sym in indices.items():
-        url = f"{BASE_URL}/real-time/{sym}?api_token={EOD_API_KEY}&fmt=json"
-        try:
-            r = requests.get(url).json()
-            results[name] = {"price": r['close'], "change": r['change_p'], "sym": sym}
-        except: continue
-    return results
-
+# --- DATA FETCHING ---
 @st.cache_data(ttl=3600)
 def get_stock_data(ticker):
-    # EODHD uses .NSE for National Stock Exchange
+    """
+    Fetches EOD and Fundamental data with explicit error catching
+    to avoid the 'Expecting value' JSON error.
+    """
+    # EODHD requires the .NSE suffix for Indian Stocks
     sym = f"{ticker}.NSE"
     hist_url = f"{BASE_URL}/eod/{sym}?api_token={EOD_API_KEY}&fmt=json&period=d&from=2023-01-01"
     fund_url = f"{BASE_URL}/fundamentals/{sym}?api_token={EOD_API_KEY}"
     
     try:
-        # Fetch Price History
-        h_data = requests.get(hist_url).json()
+        # 1. Fetch Historical Data
+        h_resp = requests.get(hist_url)
+        if h_resp.status_code != 200:
+            return None, None, f"Error {h_resp.status_code}: {h_resp.reason}. (Check API Plan for NSE access)"
+        
+        # Check if the content is empty before parsing JSON
+        if not h_resp.text.strip():
+            return None, None, f"Empty response for {sym}. Ticker may not exist on EODHD."
+            
+        h_data = h_resp.json()
         df = pd.DataFrame(h_data)
         df['date'] = pd.to_datetime(df['date'])
         
-        # Fetch Fundamentals
-        f_data = requests.get(fund_url).json()
+        # 2. Fetch Fundamental Data
+        f_resp = requests.get(fund_url)
+        f_data = None
+        if f_resp.status_code == 200 and f_resp.text.strip():
+            f_data = f_resp.json()
         
         return df, f_data, None
-    except Exception as e:
-        return None, None, str(e)
-
-# --- BRANDING ---
-st.markdown('<div class="brand-container"><div class="logo-text">⚡ QUANTUM NSE PRO</div><div style="color:#8b949e">Powered by EODHD Institutional Data</div></div>', unsafe_allow_html=True)
-
-# --- INDICES BAR ---
-idx_data = get_eod_indices()
-if idx_data:
-    cols = st.columns(len(idx_data))
-    for i, (name, d) in enumerate(idx_data.items()):
-        col_color = "#00ffcc" if d['change'] >= 0 else "#ff4b4b"
-        with cols[i]:
-            st.markdown(f"<div style='text-align:center;'><small style='color:#8b949e'>{name}</small><br><b style='font-size:18px;'>{d['price']:,.2f}</b> <span style='color:{col_color}; font-size:12px;'>({d['change']:+.2f}%)</span></div>", unsafe_allow_html=True)
-            if st.button(f"Analyze {name}", key=name):
-                st.session_state.active_idx_sym = d['sym']
-
-# --- NAVIGATION ---
-menu = option_menu(None, ["Deep Analysis", "Top 10 Picks/Sells"], 
-                   icons=["search", "list-check"], orientation="horizontal",
-                   styles={"nav-link-selected": {"background-color": "#00ffcc", "color": "#0d1117"}})
-
-if menu == "Deep Analysis":
-    search = st.text_input("", placeholder="Enter Ticker (e.g. RELIANCE, TCS, HDFCBANK)...").upper()
-    
-    if search:
-        df, funds, error = get_stock_data(search)
         
-        if error:
-            st.error(f"EODHD Connection Error: {error}")
-        else:
-            # 1. KEY FUNDAMENTAL GRID
-            highlights = funds.get('Highlights', {})
-            valuation = funds.get('Valuation', {})
-            
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown(f'<div class="stat-box"><p class="metric-label">Price</p><p class="metric-value">₹{df["close"].iloc[-1]:,.2f}</p></div>', unsafe_allow_html=True)
-            with c2:
-                pe = highlights.get('PERatio', 0)
-                st.markdown(f'<div class="stat-box"><p class="metric-label">P/E Ratio</p><p class="metric-value" style="color:{"#00ffcc" if pe and pe < 35 else "#ff4b4b"}">{pe if pe else "N/A"}</p></div>', unsafe_allow_html=True)
-            with c3:
-                roe = highlights.get('ReturnOnEquityTTM', 0) * 100
-                st.markdown(f'<div class="stat-box"><p class="metric-label">ROE %</p><p class="metric-value" style="color:{"#00ffcc" if roe > 15 else "#ff4b4b"}">{roe:.2f}%</p></div>', unsafe_allow_html=True)
-            with c4:
-                div = highlights.get('DividendYield', 0) * 100
-                st.markdown(f'<div class="stat-box"><p class="metric-label">Div. Yield</p><p class="metric-value">{div:.2f}%</p></div>', unsafe_allow_html=True)
+    except Exception as e:
+        return None, None, f"Connection Failed: {str(e)}"
 
-            # 2. FINANCIAL GROWTH AUDIT
-            st.subheader("📊 Financial Growth Audit (Yearly)")
-            # Pulling from Income Statement
-            inc_stmt = funds.get('Financials', {}).get('Income_Statement', {}).get('yearly', {})
-            if inc_stmt:
-                rows = []
-                # Get last 4 years
-                for date, val in list(inc_stmt.items())[:4]:
-                    rows.append({
-                        "Year": date[:4],
-                        "Revenue (Cr)": round(float(val.get('totalRevenue', 0)) / 1e7, 2),
-                        "Net Income (Cr)": round(float(val.get('netIncome', 0)) / 1e7, 2),
-                        "EBITDA (Cr)": round(float(val.get('ebitda', 0)) / 1e7, 2)
-                    })
-                st.table(pd.DataFrame(rows))
+# --- UI LAYOUT ---
+st.title("📈 Indian Stock Market Analysis (3-Year Horizon)")
+st.sidebar.header("Settings")
 
-            # 3. 3-YEAR TREND CHART
-            st.subheader("📈 3-Year Technical Momentum")
-            fig = go.Figure(data=[go.Scatter(x=df['date'], y=df['close'], line=dict(color='#00ffcc', width=2))])
-            fig.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+ticker_input = st.sidebar.text_input("Enter NSE Ticker (e.g., RELIANCE, TCS, HDFCBANK)", value="RELIANCE").upper()
+
+if ticker_input:
+    df, fundamentals, error = get_stock_data(ticker_input)
+
+    if error:
+        st.error(error)
+        st.info("💡 **Tip:** Most free EODHD keys are restricted to US markets. If you are using a free tier, you may need a 'Standard' plan for Indian NSE data.")
+    else:
+        # Layout: 2 Columns
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.subheader(f"{ticker_input}.NSE - Price History")
+            fig = go.Figure(data=[go.Candlestick(
+                x=df['date'],
+                open=df['open'],
+                high=df['high'],
+                low=df['low'],
+                close=df['close']
+            )])
+            fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
 
-elif menu == "Top 10 Picks/Sells":
-    b, s = st.columns(2)
-    with b:
-        st.subheader("🟢 Top 10 Strong Buy (3Y Horizon)")
-        buys = [("RELIANCE", "Energy pivot & Retail Dominance"), ("HDFCBANK", "Post-merger value play"), ("LT", "National Infra pipeline leader"), ("TCS", "AI Services & Free Cash Flow"), ("BHARTIARTL", "Telecom Oligopoly & ARPU"), ("ICICIBANK", "Superior Asset Quality"), ("M&M", "EV & Tractor Market Leadership"), ("BAJFINANCE", "Fintech scale & Data edge"), ("HINDUNILVR", "FMCG Stability"), ("TITAN", "Luxury & Jewellery growth")]
-        for t, r in buys:
-            st.markdown(f'<div class="pick-card"><b>{t}</b>: {r}</div>', unsafe_allow_html=True)
-    with s:
-        st.subheader("🔴 Top 10 Strong Sell (Risk Alert)")
-        sells = [("PAYTM", "Regulatory/Path to Profitability"), ("WIPRO", "IT Sector Laggard"), ("VEDL", "Debt Service concerns"), ("ZEEL", "Merger fallout/Media churn"), ("UPL", "Agro-chem cycle downturn"), ("PAGEIND", "Valuation vs Slowing Growth"), ("NYKAA", "Margin Compression"), ("DELHIVERY", "Logistics cost structure"), ("ADANIENT", "Stretched Fundamental Ratios"), ("NMDC", "Global Metal Price Volatility")]
-        for t, r in sells:
-            st.markdown(f'<div class="sell-card"><b>{t}</b>: {r}</div>', unsafe_allow_html=True)
+        with col2:
+            st.subheader("Key Metrics")
+            if fundamentals:
+                # Extracting specific fundamental data
+                stats = fundamentals.get('Highlights', {})
+                valuation = fundamentals.get('Valuation', {})
+                
+                st.metric("Market Cap", f"₹{stats.get('MarketCapitalization', 'N/A'):,.0f}")
+                st.metric("PE Ratio", f"{stats.get('PERatio', 'N/A')}")
+                st.metric("Forward PE", f"{valuation.get('ForwardPE', 'N/A')}")
+                st.metric("Dividend Yield", f"{stats.get('DividendYield', '0')}%")
+            else:
+                st.warning("Fundamentals data unavailable for this ticker.")
+
+        # Long Term Analysis Section
+        st.divider()
+        st.subheader("Analysis for 3+ Year Holding")
+        
+        if len(df) > 200:
+            current_price = df['close'].iloc[-1]
+            ma_200 = df['close'].rolling(window=200).mean().iloc[-1]
+            st.write(f"**Current Price:** ₹{current_price:,.2f}")
+            st.write(f"**200-Day Moving Average:** ₹{ma_200:,.2f}")
+            
+            if current_price > ma_200:
+                st.success("Analysis: Stock is currently in a long-term uptrend (Above 200-DMA).")
+            else:
+                st.warning("Analysis: Stock is below its 200-day average. Caution advised for new entries.")
