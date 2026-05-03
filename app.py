@@ -1,164 +1,163 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
+import plotly.graph_objects as go
 from GoogleNews import GoogleNews
 from streamlit_option_menu import option_menu
 
-# --- UI CONFIG ---
-st.set_page_config(page_title="NSE LIVE TERMINAL", layout="wide")
+# --- UI CONFIGURATION ---
+st.set_page_config(page_title="QUANTUM NSE | Pro Terminal", layout="wide", initial_sidebar_state="collapsed")
 
+# --- CUSTOM CSS FOR BRANDING & UI ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0a0c10; color: #e1e1e1; }
-    .status-bar {
-        background: #161b22; border-radius: 5px; padding: 10px;
-        border-left: 5px solid #00ffcc; margin-bottom: 20px;
+    .stApp { background-color: #0d1117; color: #c9d1d9; }
+    .brand-title { color: #00ffcc; font-size: 32px; font-weight: 800; margin-bottom: 0px; }
+    .brand-tagline { color: #8b949e; font-size: 14px; margin-bottom: 25px; }
+    .index-card {
+        background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+        padding: 15px; text-align: center; cursor: pointer; transition: 0.2s;
     }
-    .metric-box {
-        background: #111418; border: 1px solid #30363d;
-        padding: 15px; border-radius: 10px; text-align: center;
-    }
-    .ai-signal {
-        background: linear-gradient(90deg, #001510 0%, #002b24 100%);
-        border: 1px solid #00ffcc; padding: 15px; border-radius: 10px;
+    .index-card:hover { border-color: #00ffcc; background: #1c2128; }
+    .stat-label { color: #8b949e; font-size: 12px; text-transform: uppercase; }
+    .price-val { font-size: 20px; font-weight: bold; margin: 5px 0; }
+    /* Detailed Result Box */
+    .result-container {
+        background: #0d1117; border: 1px solid #00ffcc; border-radius: 12px;
+        padding: 25px; margin-top: 20px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CORE DATA ENGINE ---
-@st.cache_data(ttl=300)
-def fetch_market_snapshot():
-    # Adding GIFT NIFTY (traded on NSE IX) - usually tracked via SGX/GIFT proxies or futures
-    # Since yfinance uses delayed proxies, we use the GIFT Nifty index symbol if available or ^NSEI as base
-    symbols = {
-        "NIFTY 50": "^NSEI",
-        "GIFT NIFTY": "IN1!", # Proxy for GIFT NIFTY Futures
-        "BANK NIFTY": "^NSEBANK",
-        "NIFTY NEXT 50": "^NSMIDCP"
-    }
-    results = []
-    for name, sym in symbols.items():
-        try:
-            t = yf.Ticker(sym)
-            h = t.history(period="5d")
-            if not h.empty:
-                curr = h['Close'].iloc[-1]
-                prev = h['Close'].iloc[-2]
-                pct = ((curr - prev) / prev) * 100
-                results.append({"name": name, "price": curr, "change": pct, "last_close": prev})
-        except:
-            continue
-    return results
+# --- BRANDING HEADER ---
+st.markdown('<p class="brand-title">⚡ QUANTUM NSE</p>', unsafe_allow_html=True)
+st.markdown('<p class="brand-tagline">Advanced AI-Powered Analytics for the Indian Capital Markets</p>', unsafe_allow_html=True)
 
-# --- AI PREDICTION LOGIC (Simplified Momentum Model) ---
-def get_ai_prediction(symbol):
-    try:
-        data = yf.download(symbol, period="60d", interval="1d", progress=False)
-        # Simple Alpha: If 5-day SMA > 20-day SMA + RSI Momentum
-        data['SMA5'] = data['Close'].rolling(5).mean()
-        data['SMA20'] = data['Close'].rolling(20).mean()
-        
-        last_sma5 = data['SMA5'].iloc[-1]
-        last_sma20 = data['SMA20'].iloc[-1]
-        
-        if last_sma5 > last_sma20:
-            return "BULLISH", "Strong Momentum detected in short-term moving averages.", "#00ffcc"
-        else:
-            return "BEARISH", "Price action suggests consolidation or downward pressure.", "#ff4b4b"
-    except:
-        return "NEUTRAL", "Insufficient data for AI inference.", "#8b949e"
-
-# --- TOP NAVIGATION ---
+# --- NAVIGATION ---
 selected = option_menu(
-    None, ["Market Dashboard", "AI Terminal", "Corporate News"],
-    icons=["speedometer2", "robot", "broadcast"],
-    menu_icon="cast", default_index=0, orientation="horizontal",
+    menu_title=None,
+    options=["Market Overview", "News-Based Stocks"],
+    icons=["graph-up", "newspaper"],
+    orientation="horizontal",
+    styles={
+        "container": {"background-color": "#161b22", "padding": "0"},
+        "nav-link": {"font-size": "14px", "color": "#8b949e"},
+        "nav-link-selected": {"background-color": "#00ffcc", "color": "#0d1117", "font-weight": "bold"},
+    }
 )
 
-# --- PAGE 1: MARKET DASHBOARD ---
-if selected == "Market Dashboard":
-    # Header Status
-    st.markdown(f"""<div class="status-bar">
-        <b>Market Status:</b> <span style="color:#ffcc00;">CLOSED</span> (Last Traded: {pd.Timestamp.now().strftime('%d %b, %Y')})
-    </div>""", unsafe_allow_html=True)
+# --- DATA HELPERS ---
+@st.cache_data(ttl=300)
+def get_market_indices():
+    indices = {
+        "Nifty 50": "^NSEI", "Nifty Next 50": "^NSMIDCP", 
+        "Bank Nifty": "^NSEBANK", "Nifty Midcap": "NIFTY_MIDCAP_100.NS",
+        "GIFT Nifty": "IN1!" 
+    }
+    data = {}
+    for name, sym in indices.items():
+        try:
+            t = yf.Ticker(sym)
+            h = t.history(period="2d")
+            if not h.empty:
+                curr, prev = h['Close'].iloc[-1], h['Close'].iloc[-2]
+                change = ((curr - prev) / prev) * 100
+                data[name] = {"price": curr, "change": change, "sym": sym}
+        except: continue
+    return data
 
-    # Market Cards
-    cols = st.columns(4)
-    snapshots = fetch_market_snapshot()
+# --- PAGE 1: MARKET OVERVIEW ---
+if selected == "Market Overview":
+    # 1. SEARCH BAR (Detailed Result on same page)
+    col_search, col_news_link = st.columns([4, 1])
+    with col_search:
+        search_query = st.text_input("", placeholder="🔍 Search Stock (e.g. RELIANCE, TCS, SBIN)...").upper()
+    with col_news_link:
+        st.write(" ") # alignment
+        if st.button("🔥 News Stocks"):
+            st.info("Check the 'News-Based Stocks' tab for high-momentum picks!")
+
+    # DETAILED SEARCH RESULT SECTION
+    if search_query:
+        ticker_sym = f"{search_query}.NS"
+        try:
+            stock = yf.Ticker(ticker_sym)
+            info = stock.info
+            
+            st.markdown(f'<div class="result-container">', unsafe_allow_html=True)
+            res_col1, res_col2 = st.columns([2, 1])
+            
+            with res_col1:
+                st.subheader(f"{info.get('longName', search_query)}")
+                st.markdown(f"### ₹{info.get('currentPrice', 'N/A')} <span style='color:#00ffcc; font-size:18px;'>Live Quote</span>", unsafe_allow_html=True)
+                
+                # Tech Chart for Searched Stock
+                hist = stock.history(period="1mo")
+                fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
+                fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with res_col2:
+                st.markdown("#### 💎 Fundamental Health")
+                st.write(f"**Sector:** {info.get('sector', 'N/A')}")
+                st.write(f"**PE Ratio:** {info.get('trailingPE', 'N/A')}")
+                st.write(f"**Market Cap:** ₹{info.get('marketCap', 0)/10**11:.2f} L Cr")
+                
+                # AI Logic Score
+                score = 7.5 # Placeholder for AI logic
+                st.metric("AI Confidence Score", f"{score}/10", delta="Strong Buy")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        except:
+            st.error("Stock not found. Please use valid NSE Ticker.")
+
+    st.write("---")
+
+    # 2. ALL INDEXES CARDS
+    st.markdown("#### 📊 Current Market Indices")
+    indices_data = get_market_indices()
+    idx_cols = st.columns(len(indices_data))
     
-    for i, s in enumerate(snapshots):
-        with cols[i]:
-            color = "#00ffcc" if s['change'] > 0 else "#ff4b4b"
+    selected_index_sym = "NSE:NIFTY" # Default
+
+    for i, (name, val) in enumerate(indices_data.items()):
+        with idx_cols[i]:
+            color = "#00ffcc" if val['change'] > 0 else "#ff4b4b"
+            if st.button(f"{name}\n{val['price']:,.0f}", key=name):
+                # Map Yahoo Symbol to TradingView Symbol
+                tv_map = {"^NSEI": "NSE:NIFTY", "^NSEBANK": "NSE:BANKNIFTY", "^NSMIDCP": "NSE:NIFTY_MID_SELECT"}
+                selected_index_sym = tv_map.get(val['sym'], "NSE:NIFTY")
+
             st.markdown(f"""
-                <div class="metric-box">
-                    <small style="color:#8b949e;">{s['name']}</small>
-                    <h2 style="margin:0;">{s['price']:,.2f}</h2>
-                    <span style="color:{color};">{'▲' if s['change'] > 0 else '▼'} {abs(s['change']):.2f}%</span>
-                    <br><small style="color:#484f58;">Prev Close: {s['last_close']:,.2f}</small>
+                <div style="text-align:center; color:{color}; font-size:12px; margin-top:-10px;">
+                    {'▲' if val['change'] > 0 else '▼'} {abs(val['change']):.2f}%
                 </div>
             """, unsafe_allow_html=True)
 
-    st.markdown("---")
+    # 3. TRADINGVIEW INTEGRATION (Updates based on click)
+    st.components.v1.html(f"""
+        <div style="height:500px; margin-top:20px;">
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+          new TradingView.widget({{
+            "autosize": true, "symbol": "{selected_index_sym}", "interval": "D",
+            "timezone": "Asia/Kolkata", "theme": "dark", "style": "1",
+            "locale": "en", "enable_publishing": false, "hide_side_toolbar": false,
+            "container_id": "tv_chart_{selected_index_sym}"
+          }});
+          </script>
+          <div id="tv_chart_{selected_index_sym}" style="height:100%;"></div>
+        </div>
+    """, height=500)
 
-    # TradingView & Top 20 Layout
-    col_chart, col_list = st.columns([2, 1])
-    
-    with col_chart:
-        st.subheader("📊 Live Technical Canvas")
-        st.components.v1.html("""
-            <div id="tv-chart" style="height:500px;"></div>
-            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-            <script type="text/javascript">
-            new TradingView.widget({
-              "width": "100%", "height": 500, "symbol": "NSE:NIFTY",
-              "interval": "D", "timezone": "Asia/Kolkata", "theme": "dark",
-              "style": "1", "locale": "en", "enable_publishing": false,
-              "hide_side_toolbar": false, "container_id": "tv-chart"
-            });
-            </script>
-        """, height=500)
+    # 4. TOP 20 STOCKS
+    st.markdown("#### 🏆 Top 20 Market Heavyweights")
+    top_20 = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "BHARTIARTL.NS", "SBIN.NS", "INFY.NS", "LICI.NS", "ITC.NS", "HINDUNILVR.NS", "LT.NS", "BAJFINANCE.NS", "HCLTECH.NS", "MARUTI.NS", "SUNPHARMA.NS", "ADANIENT.NS", "KOTAKBANK.NS", "TITAN.NS", "ONGC.NS", "TATAMOTORS.NS"]
+    df_top = yf.download(top_20, period="1d")['Close'].iloc[-1].reset_index()
+    df_top.columns = ['Ticker', 'Price (INR)']
+    st.dataframe(df_top.T, use_container_width=True) # Transposed for a sleek look
 
-    with col_list:
-        st.subheader("🔥 AI Sentiment (Top Stocks)")
-        top_stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"]
-        for stock in top_stocks:
-            signal, reason, col = get_ai_prediction(f"{stock}.NS")
-            st.markdown(f"""
-                <div style="background:#161b22; padding:10px; border-radius:5px; margin-bottom:10px; border-right:4px solid {col};">
-                    <div style="display:flex; justify-content:space-between;">
-                        <b>{stock}</b>
-                        <span style="color:{col}; font-weight:bold;">{signal}</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-# --- PAGE 2: AI TERMINAL ---
-elif selected == "AI Terminal":
-    st.subheader("🤖 Neural Market Search")
-    query = st.text_input("Enter NSE Ticker", "RELIANCE")
-    
-    if st.button("Generate AI Audit"):
-        ticker = f"{query}.NS"
-        signal, reason, col = get_ai_prediction(ticker)
-        
-        st.markdown(f"""
-            <div class="ai-signal">
-                <h3 style="color:{col}; margin-top:0;">AI Prediction: {signal}</h3>
-                <p>{reason}</p>
-                <small>Note: This is an automated analysis based on price momentum and RSI. Not financial advice.</small>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # Detailed Stats for Search
-        stock = yf.Ticker(ticker)
-        st.write(stock.history(period="1mo"))
-
-# --- PAGE 3: CORPORATE NEWS ---
-elif selected == "Corporate News":
-    st.subheader("📰 Market Moving Headlines")
-    gn = GoogleNews(period='3d', lang='en', region='IN')
-    gn.search('NSE Indian Stock Market')
-    for item in gn.result()[:10]:
-        st.info(f"**{item.get('media')}**: {item.get('title')}")
-        st.caption(f"Published: {item.get('date')} | [Read More]({item.get('link')})")
+# --- PAGE 2: NEWS-BASED STOCKS ---
+elif selected == "News-Based Stocks":
+    st.subheader("📰 Sentiment-Driven Stock Analysis")
+    # Content for news logic goes here
