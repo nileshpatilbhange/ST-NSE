@@ -6,3 +6,4 @@ requests
 beautifulsoup4
 GoogleNews
 torch --index-url https://download.pytorch.org/whl/cpu
+plotly
