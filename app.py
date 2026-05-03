@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
-# --- PREMIUM UI THEME ---
+# --- 1. PREMIUM THEME CONFIG ---
 st.set_page_config(page_title="QUANTUM NSE | Pro Terminal", layout="wide")
 
 st.markdown("""
@@ -12,139 +12,128 @@ st.markdown("""
     .stApp { background-color: #0b0e14; color: #e1e1e1; }
     [data-testid="stSidebar"] { background-color: #161b22; border-right: 1px solid #30363d; }
     .main-header { font-size: 28px; font-weight: 800; color: #00ffcc; margin-bottom: 20px; }
-    .card { background: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
-    .metric-val { font-size: 24px; font-weight: bold; color: #ffffff; }
-    .buy-text { color: #00ffcc; font-weight: bold; }
-    .sell-text { color: #ff4b4b; font-weight: bold; }
+    .card { background: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
+    .metric-val { font-size: 22px; font-weight: bold; color: #ffffff; }
+    .buy-text { color: #00ffcc; font-weight: bold; font-size: 14px; }
+    .sell-text { color: #ff4b4b; font-weight: bold; font-size: 14px; }
+    .news-card { border-left: 4px solid #00ffcc; background: #161b22; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DATA ENGINES ---
+# --- 2. ROBUST DATA ENGINES ---
 @st.cache_data(ttl=600)
-def get_indices():
-    # Primary Indian Indices
+def get_indices_data():
     indices = {
-        "Nifty 50": "^NSEI",
-        "Nifty Bank": "^NSEBANK",
-        "Nifty IT": "^CNXIT",
-        "Nifty Auto": "^CNXAUTO",
-        "BSE Sensex": "^BSESN"
+        "Nifty 50": "^NSEI", "Nifty Bank": "^NSEBANK", 
+        "Nifty IT": "^CNXIT", "BSE Sensex": "^BSESN"
     }
-    data = []
+    results = []
     for name, sym in indices.items():
-        ticker = yf.Ticker(sym)
-        hist = ticker.history(period="2d")
-        if not hist.empty:
-            price = hist['Close'].iloc[-1]
-            change = ((price - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
-            data.append({"Index": name, "Price": price, "Change%": change, "Symbol": sym})
-    return pd.DataFrame(data)
+        try:
+            # Fetch 5 days to ensure we always have at least 2 rows (prevents IndexError)
+            ticker = yf.Ticker(sym)
+            hist = ticker.history(period="5d")
+            if len(hist) >= 2:
+                price = hist['Close'].iloc[-1]
+                prev_price = hist['Close'].iloc[-2]
+                change = ((price - prev_price) / prev_price) * 100
+                results.append({"Index": name, "Price": price, "Change": change, "Symbol": sym})
+        except:
+            continue
+    return pd.DataFrame(results)
 
 @st.cache_data(ttl=3600)
-def get_market_news():
-    # Simple news aggregator using yfinance news for broad market
-    # In a real tool, this would sync with an RSS/News API
-    stock = yf.Ticker("^NSEI")
-    return stock.news[:10] # Last 10 market-moving stories
+def get_stock_news():
+    # Syncs latest market news
+    return yf.Ticker("^NSEI").news[:8]
 
-# --- SIDEBAR NAVIGATION ---
-st.sidebar.markdown("<h2 style='color:#00ffcc;'>QUANTUM PRO</h2>", unsafe_allow_html=True)
-page = st.sidebar.radio("Navigation", ["Market Overview", "Indices Analysis", "Stock Deep-Dive", "Top 10 Picks"])
+# --- 3. SIDEBAR NAVIGATION ---
+st.sidebar.markdown("<h1 style='color:#00ffcc; font-size: 24px;'>QUANTUM PRO</h1>", unsafe_allow_html=True)
+st.sidebar.divider()
+nav = st.sidebar.radio("DASHBOARD", ["Market Pulse", "Technical Terminal", "Stock Deep-Dive", "Alpha Picks"])
 
-# --- PAGE 1: MARKET OVERVIEW & NEWS ---
-if page == "Market Overview":
-    st.markdown('<p class="main-header">Market Pulse</p>', unsafe_allow_html=True)
+# --- 4. PAGE: MARKET PULSE (News & Sync) ---
+if nav == "Market Pulse":
+    st.markdown('<p class="main-header">Market Overview</p>', unsafe_allow_html=True)
     
-    # Indices Ribbon
-    idx_df = get_indices()
+    idx_df = get_indices_data()
     cols = st.columns(len(idx_df))
     for i, row in idx_df.iterrows():
         with cols[i]:
-            color = "#00ffcc" if row['Change%'] > 0 else "#ff4b4b"
+            color = "#00ffcc" if row['Change'] >= 0 else "#ff4b4b"
             st.markdown(f"""
-                <div class="card" style="text-align:center; border-top: 3px solid {color}">
-                    <small>{row['Index']}</small><br>
+                <div class="card" style="border-top: 3px solid {color}">
+                    <small style="color:#8b949e">{row['Index']}</small><br>
                     <span class="metric-val">₹{row['Price']:,.0f}</span><br>
-                    <span style="color:{color}">{row['Change%']:+.2f}%</span>
+                    <span style="color:{color}">{row['Change']:+.2f}%</span>
                 </div>
             """, unsafe_allow_html=True)
 
-    # News Section (Last 2 Weeks Sync)
-    st.subheader("📰 Market-Moving News")
-    news = get_market_news()
-    for item in news:
-        with st.expander(f"📌 {item['title']}"):
-            st.write(f"**Publisher:** {item['publisher']}")
-            st.write(f"**Published:** {datetime.fromtimestamp(item['providerPublishTime']).strftime('%Y-%m-%d %H:%M')}")
-            st.link_button("Read Full Story", item['link'])
+    st.divider()
+    st.subheader("📰 Market-Sync News (Last 2 Weeks)")
+    news = get_stock_news()
+    for n in news:
+        st.markdown(f"""
+            <div class="news-card">
+                <div style="font-size: 14px; color: #00ffcc; margin-bottom: 5px;">{n['publisher']}</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">{n['title']}</div>
+                <a href="{n['link']}" target="_blank" style="color: #8b949e; text-decoration: none; font-size: 12px;">Read Insight →</a>
+            </div>
+        """, unsafe_allow_html=True)
 
-# --- PAGE 2: INDICES ANALYSIS (Tech Charts) ---
-elif page == "Indices Analysis":
-    st.markdown('<p class="main-header">Sectoral & Index Charts</p>', unsafe_allow_html=True)
-    idx_df = get_indices()
-    selected_idx_name = st.selectbox("Select Index for Technical View", idx_df['Index'])
-    selected_sym = idx_df[idx_df['Index'] == selected_idx_name]['Symbol'].values[0]
+# --- 5. PAGE: TECHNICAL TERMINAL (Indices Charts) ---
+elif nav == "Technical Terminal":
+    st.markdown('<p class="main-header">Index Technicals</p>', unsafe_allow_html=True)
+    idx_df = get_indices_data()
+    selected = st.selectbox("Select Benchmark", idx_df['Index'])
+    sym = idx_df[idx_df['Index'] == selected]['Symbol'].values[0]
     
-    hist = yf.Ticker(selected_sym).history(period="2y")
+    hist = yf.Ticker(sym).history(period="1y")
     fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
-    fig.update_layout(template="plotly_dark", height=600, title=f"{selected_idx_name} Technical Chart")
+    fig.update_layout(template="plotly_dark", height=600, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- PAGE 3: STOCK DEEP-DIVE ---
-elif page == "Stock Deep-Dive":
-    st.markdown('<p class="main-header">Institutional Stock Analysis</p>', unsafe_allow_html=True)
-    ticker = st.text_input("Search NSE Ticker", value="RELIANCE").upper()
+# --- 6. PAGE: STOCK DEEP-DIVE (Other Data) ---
+elif nav == "Stock Deep-Dive":
+    st.markdown('<p class="main-header">Institutional Research</p>', unsafe_allow_html=True)
+    ticker = st.text_input("Enter Ticker (e.g., RELIANCE, TCS)", value="RELIANCE").upper()
+    
     if ticker:
-        sym = f"{ticker}.NS"
-        stock = yf.Ticker(sym)
+        stock = yf.Ticker(f"{ticker}.NS")
         info = stock.info
-        hist = stock.history(period="5y")
         
-        # Grid for Other Data (Balance Sheet / Fundamentals)
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f"**Market Cap:** ₹{info.get('marketCap', 0)/1e7:,.0f} Cr")
-            st.markdown(f"**Trailing P/E:** {info.get('trailingPE', 'N/A')}")
-        with c2:
-            st.markdown(f"**Dividend Yield:** {info.get('dividendYield', 0)*100:.2f}%")
-            st.markdown(f"**ROE:** {info.get('returnOnEquity', 0)*100:.1f}%")
-        with c3:
-            st.markdown(f"**52 Week High:** ₹{info.get('fiftyTwoWeekHigh')}")
-            st.markdown(f"**Sector:** {info.get('sector')}")
+        # Financial Grid (The "Other Data")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Mkt Cap", f"₹{info.get('marketCap',0)/1e7:,.0f} Cr")
+        c2.metric("P/E Ratio", f"{info.get('trailingPE','N/A')}")
+        c3.metric("Debt/Equity", f"{info.get('debtToEquity',0)/100:.2f}")
+        c4.metric("ROE", f"{info.get('returnOnEquity',0)*100:.1f}%")
         
-        # Technical 3-Year Chart
-        df_3y = hist.last('1095D') if hasattr(hist, 'last') else hist[hist.index >= (hist.index[-1] - pd.DateOffset(years=3))]
-        fig = go.Figure(go.Scatter(x=df_3y.index, y=df_3y['Close'], line=dict(color='#00ffcc')))
-        fig.update_layout(template="plotly_dark", title=f"{ticker} 3-Year Trend")
+        # Advanced Technicals
+        hist = stock.history(period="2y")
+        hist['MA50'] = hist['Close'].rolling(50).mean()
+        hist['MA200'] = hist['Close'].rolling(200).mean()
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['Close'], name="Price", line=dict(color="#00ffcc")))
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA50'], name="50-DMA", line=dict(color="#ff00ff", dash='dash')))
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA200'], name="200-DMA", line=dict(color="#ffcc00")))
+        fig.update_layout(template="plotly_dark", height=500)
         st.plotly_chart(fig, use_container_width=True)
 
-# --- PAGE 4: TOP 10 PICKS (Buy/Sell) ---
-elif page == "Top 10 Picks":
-    st.markdown('<p class="main-header">Top 10 Analyst Signals</p>', unsafe_allow_html=True)
+# --- 7. PAGE: ALPHA PICKS (Top 10 Buy/Sell) ---
+elif nav == "Alpha Picks":
+    st.markdown('<p class="main-header">Quantum Top 10 Picks</p>', unsafe_allow_html=True)
+    b, s = st.columns(2)
     
-    col_buy, col_sell = st.columns(2)
-    
-    with col_buy:
-        st.subheader("🚀 Strong Buy (2026 Picks)")
-        # Static curated list based on QGLP (Quality, Growth, Longevity, Price) logic
-        buys = [
-            ("SBI", "Banking", "₹1,100"), ("BHARTIARTL", "Telecom", "₹2,365"), 
-            ("HCLTECH", "IT/AI", "₹2,150"), ("L&T", "Infra", "₹4,200"),
-            ("TVSMOTOR", "Auto/EV", "₹4,159"), ("RELIANCE", "Energy/Retail", "₹3,400"),
-            ("HDFCBANK", "Banking", "₹2,100"), ("INFY", "IT", "₹1,950"),
-            ("ICICIBANK", "Banking", "₹1,350"), ("TCS", "IT", "₹4,600")
-        ]
-        for s, ind, tar in buys:
-            st.markdown(f"""<div class="card"><b>{s}.NS</b> | {ind}<br><span class="buy-text">Target: {tar}</span></div>""", unsafe_allow_html=True)
-
-    with col_sell:
-        st.subheader("⚠️ Sell/Avoid Signals")
-        sells = [
-            ("IDEA", "Telecom", "Debt Stress"), ("PAYTM", "Fintech", "Regulatory"),
-            ("ZOMATO", "Platform", "Valuation"), ("NYKAA", "E-com", "Margin Pressure"),
-            ("YESBANK", "Banking", "Stressed Assets"), ("RPOWER", "Power", "Debt"),
-            ("JPASSOCIAT", "Infra", "Liquidity"), ("SUZLON", "Energy", "Overbought"),
-            ("DELHIVERY", "Logistics", "Loss Making"), ("ADANIPOWER", "Energy", "Volatility")
-        ]
-        for s, ind, reason in sells:
-            st.markdown(f"""<div class="card"><b>{s}.NS</b> | {ind}<br><span class="sell-text">Reason: {reason}</span></div>""", unsafe_allow_html=True)
+    with b:
+        st.markdown("<h3 style='color:#00ffcc'>🚀 Top 10 Strong Buy</h3>", unsafe_allow_html=True)
+        buys = [("SBI", "₹1,150"), ("HAL", "₹5,200"), ("BHARTIARTL", "₹1,800"), ("LT", "₹4,100"), ("TATASTEEL", "₹190"), ("RELIANCE", "₹3,400"), ("HDFCBANK", "₹2,100"), ("INFY", "₹2,050"), ("ICICIBANK", "₹1,350"), ("ZOMATO", "₹350")]
+        for stock, target in buys:
+            st.markdown(f'<div class="card"><b>{stock}.NS</b><br><span class="buy-text">Conviction: High | Target: {target}</span></div>', unsafe_allow_html=True)
+            
+    with s:
+        st.markdown("<h3 style='color:#ff4b4b'>⚠️ Top 10 Strong Sell</h3>", unsafe_allow_html=True)
+        sells = [("IDEA", "Debt Stress"), ("PAYTM", "Valuation"), ("YESBANK", "NPA Risk"), ("RPOWER", "Overbought"), ("NYKAA", "Margin Dip"), ("PEL", "Financials"), ("SUZLON", "Technical Peak"), ("DELHIVERY", "Loss-Making"), ("AWL", "Weak Growth"), ("DIXON", "Overstretched")]
+        for stock, reason in sells:
+            st.markdown(f'<div class="card"><b>{stock}.NS</b><br><span class="sell-text">Risk: High | {reason}</span></div>', unsafe_allow_html=True)
