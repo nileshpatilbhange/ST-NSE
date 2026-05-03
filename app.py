@@ -2,138 +2,123 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from streamlit_option_menu import option_menu
 
-# --- 1. PREMIUM THEME CONFIG ---
-st.set_page_config(page_title="QUANTUM NSE | Pro Terminal", layout="wide")
+# --- UI CONFIGURATION ---
+st.set_page_config(page_title="QUANTUM NSE | AI Terminal", layout="wide", initial_sidebar_state="collapsed")
 
+# --- CUSTOM CSS (Visibility & Branding) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0b0e14; color: #e1e1e1; }
-    [data-testid="stSidebar"] { background-color: #161b22; border-right: 1px solid #30363d; }
-    .main-header { font-size: 28px; font-weight: 800; color: #00ffcc; margin-bottom: 20px; }
-    .card { background: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
-    .metric-val { font-size: 22px; font-weight: bold; color: #ffffff; }
-    .buy-text { color: #00ffcc; font-weight: bold; font-size: 14px; }
-    .sell-text { color: #ff4b4b; font-weight: bold; font-size: 14px; }
-    .news-card { border-left: 4px solid #00ffcc; background: #161b22; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+    .stApp { background-color: #0d1117; color: #ffffff; }
+    .brand-container { text-align: center; padding: 25px 0; background: #161b22; border-radius: 0 0 30px 30px; border-bottom: 1px solid #30363d; margin-bottom: 20px; }
+    .logo-text { font-size: 42px; font-weight: 800; color: #00ffcc; margin: 0; }
+    div[data-testid="stTable"] td, div[data-testid="stTable"] th { color: #ffffff !important; font-size: 16px !important; border-bottom: 1px solid #30363d !important; }
+    .stat-box { background: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
+    .metric-label { font-size: 12px; color: #8b949e; text-transform: uppercase; }
+    .metric-value { font-size: 22px; font-weight: bold; margin-top: 5px; }
+    .pick-card { background: #1c2128; border-left: 5px solid #00ffcc; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+    .sell-card { background: #1c2128; border-left: 5px solid #ff4b4b; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ROBUST DATA ENGINES ---
-@st.cache_data(ttl=600)
-def get_indices_data():
-    indices = {
-        "Nifty 50": "^NSEI", "Nifty Bank": "^NSEBANK", 
-        "Nifty IT": "^CNXIT", "BSE Sensex": "^BSESN"
-    }
-    results = []
+# --- ENGINE FUNCTIONS ---
+def get_index_data(indices):
+    data = {}
     for name, sym in indices.items():
-        try:
-            # Fetch 5 days to ensure we always have at least 2 rows (prevents IndexError)
-            ticker = yf.Ticker(sym)
-            hist = ticker.history(period="5d")
-            if len(hist) >= 2:
-                price = hist['Close'].iloc[-1]
-                prev_price = hist['Close'].iloc[-2]
-                change = ((price - prev_price) / prev_price) * 100
-                results.append({"Index": name, "Price": price, "Change": change, "Symbol": sym})
-        except:
-            continue
-    return pd.DataFrame(results)
+        ticker = yf.Ticker(sym)
+        hist = ticker.history(period="2d")
+        if len(hist) > 1:
+            price = hist['Close'].iloc[-1]
+            change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
+            data[name] = {"price": price, "change": change, "sym": sym}
+    return data
 
-@st.cache_data(ttl=3600)
-def get_stock_news():
-    # Syncs latest market news
-    return yf.Ticker("^NSEI").news[:8]
+# --- BRANDING ---
+st.markdown('<div class="brand-container"><div class="logo-text">⚡ QUANTUM NSE PRO</div></div>', unsafe_allow_html=True)
 
-# --- 3. SIDEBAR NAVIGATION ---
-st.sidebar.markdown("<h1 style='color:#00ffcc; font-size: 24px;'>QUANTUM PRO</h1>", unsafe_allow_html=True)
-st.sidebar.divider()
-nav = st.sidebar.radio("DASHBOARD", ["Market Pulse", "Technical Terminal", "Stock Deep-Dive", "Alpha Picks"])
+# --- ALL INDICES DASHBOARD ---
+major_indices = {
+    "NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "FIN NIFTY": "NIFTY_FIN_SERVICE.NS",
+    "NIFTY IT": "^CNXIT", "NIFTY AUTO": "^CNXAUTO", "NIFTY PHARMA": "^CNXPHARMA"
+}
 
-# --- 4. PAGE: MARKET PULSE (News & Sync) ---
-if nav == "Market Pulse":
-    st.markdown('<p class="main-header">Market Overview</p>', unsafe_allow_html=True)
-    
-    idx_df = get_indices_data()
-    cols = st.columns(len(idx_df))
-    for i, row in idx_df.iterrows():
-        with cols[i]:
-            color = "#00ffcc" if row['Change'] >= 0 else "#ff4b4b"
-            st.markdown(f"""
-                <div class="card" style="border-top: 3px solid {color}">
-                    <small style="color:#8b949e">{row['Index']}</small><br>
-                    <span class="metric-val">₹{row['Price']:,.0f}</span><br>
-                    <span style="color:{color}">{row['Change']:+.2f}%</span>
-                </div>
-            """, unsafe_allow_html=True)
+idx_results = get_index_data(major_indices)
+cols = st.columns(len(idx_results))
+for i, (name, d) in enumerate(idx_results.items()):
+    col_color = "#00ffcc" if d['change'] >= 0 else "#ff4b4b"
+    with cols[i]:
+        if st.button(f"{name}\n{d['price']:,.1f}", key=name):
+            st.session_state.active_index = d['sym']
+            st.session_state.active_name = name
 
-    st.divider()
-    st.subheader("📰 Market-Sync News (Last 2 Weeks)")
-    news = get_stock_news()
-    for n in news:
-        st.markdown(f"""
-            <div class="news-card">
-                <div style="font-size: 14px; color: #00ffcc; margin-bottom: 5px;">{n['publisher']}</div>
-                <div style="font-weight: bold; margin-bottom: 5px;">{n['title']}</div>
-                <a href="{n['link']}" target="_blank" style="color: #8b949e; text-decoration: none; font-size: 12px;">Read Insight →</a>
-            </div>
-        """, unsafe_allow_html=True)
-
-# --- 5. PAGE: TECHNICAL TERMINAL (Indices Charts) ---
-elif nav == "Technical Terminal":
-    st.markdown('<p class="main-header">Index Technicals</p>', unsafe_allow_html=True)
-    idx_df = get_indices_data()
-    selected = st.selectbox("Select Benchmark", idx_df['Index'])
-    sym = idx_df[idx_df['Index'] == selected]['Symbol'].values[0]
-    
-    hist = yf.Ticker(sym).history(period="1y")
-    fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
-    fig.update_layout(template="plotly_dark", height=600, margin=dict(l=10, r=10, t=10, b=10))
+# Show Technical Chart for Index if selected
+if "active_index" in st.session_state:
+    st.subheader(f"📈 {st.session_state.active_name} Technical Chart")
+    idx_hist = yf.Ticker(st.session_state.active_index).history(period="1y")
+    fig = go.Figure(data=[go.Candlestick(x=idx_hist.index, open=idx_hist['Open'], high=idx_hist['High'], low=idx_hist['Low'], close=idx_hist['Close'])])
+    fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. PAGE: STOCK DEEP-DIVE (Other Data) ---
-elif nav == "Stock Deep-Dive":
-    st.markdown('<p class="main-header">Institutional Research</p>', unsafe_allow_html=True)
-    ticker = st.text_input("Enter Ticker (e.g., RELIANCE, TCS)", value="RELIANCE").upper()
-    
-    if ticker:
-        stock = yf.Ticker(f"{ticker}.NS")
+# --- NAVIGATION ---
+menu = option_menu(None, ["Stock Search", "Top 10 Picks/Sells"], icons=["search", "list-check"], orientation="horizontal")
+
+if menu == "Stock Search":
+    search = st.text_input("", placeholder="Enter Ticker (e.g., RELIANCE)...").upper()
+    if search:
+        t_sym = f"{search}.NS"
+        stock = yf.Ticker(t_sym)
         info = stock.info
         
-        # Financial Grid (The "Other Data")
+        # 1. CORE STATS GRID
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Mkt Cap", f"₹{info.get('marketCap',0)/1e7:,.0f} Cr")
-        c2.metric("P/E Ratio", f"{info.get('trailingPE','N/A')}")
-        c3.metric("Debt/Equity", f"{info.get('debtToEquity',0)/100:.2f}")
-        c4.metric("ROE", f"{info.get('returnOnEquity',0)*100:.1f}%")
+        pe = info.get('trailingPE', 0)
+        peg = info.get('pegRatio', 0)
+        roe = info.get('returnOnEquity', 0) * 100
+        debt = info.get('debtToEquity', 0) / 100
         
-        # Advanced Technicals
-        hist = stock.history(period="2y")
-        hist['MA50'] = hist['Close'].rolling(50).mean()
-        hist['MA200'] = hist['Close'].rolling(200).mean()
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['Close'], name="Price", line=dict(color="#00ffcc")))
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA50'], name="50-DMA", line=dict(color="#ff00ff", dash='dash')))
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA200'], name="200-DMA", line=dict(color="#ffcc00")))
-        fig.update_layout(template="plotly_dark", height=500)
-        st.plotly_chart(fig, use_container_width=True)
+        with c1:
+            st.markdown(f'<div class="stat-box"><p class="metric-label">Price</p><p class="metric-value">₹{info.get("currentPrice", 0):,.2f}</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-box"><p class="metric-label">P/E Ratio</p><p class="metric-value" style="color:{"#00ffcc" if pe < 30 else "#ff4b4b"}">{pe:.2f}</p></div>', unsafe_allow_html=True)
+        with c2:
+            st.markdown(f'<div class="stat-box"><p class="metric-label">PEG Ratio</p><p class="metric-value" style="color:{"#00ffcc" if 0.8<peg<1.2 else "#ff4b4b"}">{peg:.2f}</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-box"><p class="metric-label">Debt/Equity</p><p class="metric-value" style="color:{"#00ffcc" if debt<1 else "#ff4b4b"}">{debt:.2f}</p></div>', unsafe_allow_html=True)
+        with c3:
+            st.markdown(f'<div class="stat-box"><p class="metric-label">ROE</p><p class="metric-value" style="color:{"#00ffcc" if roe>15 else "#ff4b4b"}">{roe:.1f}%</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-box"><p class="metric-label">Pledged %</p><p class="metric-value">{info.get("pledgedHoldingPercent", 0):.1f}%</p></div>', unsafe_allow_html=True)
+        with c4:
+            st.markdown(f'<div class="stat-box"><p class="metric-label">Health Score</p><p class="metric-value" style="color:#00ffcc">{"Strong" if roe > 15 and debt < 1 else "Average"}</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-box"><p class="metric-label">Sentiment</p><p class="metric-value">BULLISH</p></div>', unsafe_allow_html=True)
 
-# --- 7. PAGE: ALPHA PICKS (Top 10 Buy/Sell) ---
-elif nav == "Alpha Picks":
-    st.markdown('<p class="main-header">Quantum Top 10 Picks</p>', unsafe_allow_html=True)
-    b, s = st.columns(2)
+        # 2. FINANCIALS (Visible Table)
+        st.subheader("📊 Financial Growth Audit (YoY)")
+        fin = stock.financials.T
+        if not fin.empty:
+            growth_df = pd.DataFrame({
+                "Year": fin.index.year,
+                "Net Profit (Cr)": (fin['Net Income'] / 1e7).round(2),
+                "Revenue (Cr)": (fin['Total Revenue'] / 1e7).round(2)
+            }).reset_index(drop=True)
+            st.table(growth_df)
+
+        # 3. 3-YEAR CHART
+        st.subheader("📈 3-Year Price Action")
+        h3y = stock.history(period="3y")
+        fig3 = go.Figure(data=[go.Scatter(x=h3y.index, y=h3y['Close'], line=dict(color='#00ffcc'))])
+        fig3.update_layout(template="plotly_dark", height=400)
+        st.plotly_chart(fig3, use_container_width=True)
+
+elif menu == "Top 10 Picks/Sells":
+    buy_col, sell_col = st.columns(2)
     
-    with b:
-        st.markdown("<h3 style='color:#00ffcc'>🚀 Top 10 Strong Buy</h3>", unsafe_allow_html=True)
-        buys = [("SBI", "₹1,150"), ("HAL", "₹5,200"), ("BHARTIARTL", "₹1,800"), ("LT", "₹4,100"), ("TATASTEEL", "₹190"), ("RELIANCE", "₹3,400"), ("HDFCBANK", "₹2,100"), ("INFY", "₹2,050"), ("ICICIBANK", "₹1,350"), ("ZOMATO", "₹350")]
-        for stock, target in buys:
-            st.markdown(f'<div class="card"><b>{stock}.NS</b><br><span class="buy-text">Conviction: High | Target: {target}</span></div>', unsafe_allow_html=True)
+    with buy_col:
+        st.subheader("🟢 Top 10 Strong Buy")
+        buys = [("RELIANCE", "Energy transition Alpha"), ("HDFCBANK", "Valuation bottoming"), ("LT", "Infra Orderbook peak"), ("TCS", "AI Margin expansion"), ("BHARTIARTL", "ARPU growth dominance"), ("ICICIBANK", "Best-in-class ROA"), ("M&M", "EV/SUV Market leader"), ("BAJFINANCE", "Digital lending scale"), ("HINDUNILVR", "Consumption recovery"), ("TITAN", "Luxury demand resilient")]
+        for s, r in buys:
+            st.markdown(f'<div class="pick-card"><b>{s}</b>: {r}</div>', unsafe_allow_html=True)
             
-    with s:
-        st.markdown("<h3 style='color:#ff4b4b'>⚠️ Top 10 Strong Sell</h3>", unsafe_allow_html=True)
-        sells = [("IDEA", "Debt Stress"), ("PAYTM", "Valuation"), ("YESBANK", "NPA Risk"), ("RPOWER", "Overbought"), ("NYKAA", "Margin Dip"), ("PEL", "Financials"), ("SUZLON", "Technical Peak"), ("DELHIVERY", "Loss-Making"), ("AWL", "Weak Growth"), ("DIXON", "Overstretched")]
-        for stock, reason in sells:
-            st.markdown(f'<div class="card"><b>{stock}.NS</b><br><span class="sell-text">Risk: High | {reason}</span></div>', unsafe_allow_html=True)
+    with sell_col:
+        st.subheader("🔴 Top 10 Strong Sell")
+        sells = [("PAYTM", "Regulatory headwinds"), ("WIPRO", "Revenue growth laggard"), ("VEDL", "High debt concerns"), ("ZEEL", "Merger uncertainty"), ("UPL", "Global agro-chemical slowdown"), ("PAGEIND", "High valuation/Low growth"), ("NYKAA", "Margin compression"), ("DELHIVERY", "Path to profitability slow"), ("ADANIENT", "High leverage levels"), ("NMDC", "Global iron ore volatility")]
+        for s, r in sells:
+            st.markdown(f'<div class="sell-card"><b>{s}</b>: {r}</div>', unsafe_allow_html=True)
