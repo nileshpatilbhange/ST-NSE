@@ -31,7 +31,6 @@ st.markdown("""
     .pick-card { background: #0d1117; border-left: 5px solid #c8a45e; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
     .sell-card { background: #0d1117; border-left: 5px solid #ff4b4b; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
     
-    /* Global Button Styling */
     .stButton>button { border-color: #c8a45e33 !important; color: #c8a45e !important; background-color: #0d1117 !important; transition: 0.3s; }
     .stButton>button:hover { border-color: #c8a45e !important; color: #ffffff !important; background-color: #c8a45e22 !important; }
     </style>
@@ -82,18 +81,28 @@ selected = option_menu(None, ["Analysis", "Top 10 Picks", "Market News"],
         "nav-link-selected": {"background-color": "#c8a45e", "color": "#05070a", "font-weight": "bold"}
     })
 
-# --- INDEX CHART DISPLAY ---
+# --- INDEX 3-YEAR PRICE ACTION DISPLAY ---
 if 'selected_index' in st.session_state:
-    st.subheader(f"📈 {st.session_state.idx_display_name} Technical Chart")
-    idx_hist = yf.Ticker(st.session_state.selected_index).history(period="1y")
-    fig_idx = go.Figure(data=[go.Candlestick(
-        x=idx_hist.index, open=idx_hist['Open'], high=idx_hist['High'], 
-        low=idx_hist['Low'], close=idx_hist['Close'],
-        increasing_line_color='#c8a45e', decreasing_line_color='#ff4b4b'
+    st.subheader(f"📈 {st.session_state.idx_display_name}: 3-Year Price Action")
+    idx_hist = yf.Ticker(st.session_state.selected_index).history(period="3y")
+    
+    fig_idx = go.Figure(data=[go.Scatter(
+        x=idx_hist.index, 
+        y=idx_hist['Close'], 
+        line=dict(color='#c8a45e', width=2)
     )])
-    fig_idx.update_layout(template="plotly_dark", height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    
+    fig_idx.update_layout(
+        template="plotly_dark", 
+        height=400, 
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#1e222d')
+    )
     st.plotly_chart(fig_idx, use_container_width=True)
-    if st.button("Close Index Chart"): 
+    
+    if st.button("Close Index Action"): 
         del st.session_state.selected_index
         st.rerun()
 
@@ -198,5 +207,4 @@ elif selected == "Market News":
                 st.markdown(f"{icon} **{title}**")
                 st.caption(f"Source: {publisher} | [Read Story]({link})")
                 st.divider()
-        else: st.info("No news updates available at this time.")
     except Exception as e: st.error(f"Error fetching news: {e}")
