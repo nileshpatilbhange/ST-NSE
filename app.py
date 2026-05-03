@@ -1,74 +1,163 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
-# --- UPDATED AI-DRIVEN RECO LOGIC (2026 DATA) ---
-def get_recommendations(risk):
+# --- 1. CONFIGURATION & STYLING ---
+st.set_page_config(page_title="QUANTUM NSE | AI Terminal", layout="wide")
+
+st.markdown("""
+    <style>
+    .main { background-color: #05070a; color: #e0e0e0; }
+    .stNumberInput, .stSelectbox, .stSlider { background-color: #0d1117 !important; }
+    .equation-box { 
+        background: #0d1117; 
+        border: 1px solid #c8a45e44; 
+        padding: 20px; 
+        border-radius: 15px; 
+        font-family: 'Courier New', monospace;
+        margin-bottom: 20px;
+    }
+    .metric-value { color: #c8a45e; font-size: 2.5rem; font-weight: bold; }
+    .reco-card { 
+        background: #161b22; 
+        padding: 15px; 
+        border-radius: 10px; 
+        border-left: 5px solid #c8a45e;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. CORE LOGIC & 2026 DATA ---
+def get_ai_engine_data(risk):
+    """Returns 2026-specific data based on latest market trends."""
     if risk == "Aggressive":
-        # Focus: AI Software, Data Centers, and Semiconductors
-        indices = ["Nifty Midcap 150 Momentum 50 (35%)", "Nifty Smallcap 250 (25%)", "Nifty IT Index (20%)", "Data Center/Infra ETF (10%)", "Nifty Next 50 (10%)"]
-        stocks = ["Persistent Systems (AI Services)", "Saksoft (AI/Analytics)", "Netweb Tech (Supercomputing)", "KPIT Tech (Automotive AI)", "Kaynes Tech (Semiconductors)"]
-        ret = 0.18  # 18% Expected CAGR
+        indices = [
+            "Nifty Midcap 150 Momentum 50 (35%)",
+            "Nifty Smallcap 250 Index (25%)",
+            "Nifty India Manufacturing Index (20%)",
+            "Nifty IT Index (10%)",
+            "Data Center & Infra ETF (10%)"
+        ]
+        stocks = [
+            "Netweb Technologies (AI Supercomputing)",
+            "Kaynes Technology (Semiconductors)",
+            "Persistent Systems (AI/Cloud)",
+            "Saksoft Ltd (Niche AI Services)",
+            "Mazagon Dock (Defense/AI Systems)"
+        ]
+        annual_return = 0.18 # 18% Target
+        sip_weight = 0.4     # 40% SIP, 60% Lumpsum
+    
     elif risk == "Moderate":
-        # Focus: Core AI Adoption + Strong Financials
-        indices = ["Nifty 50 Index (40%)", "Nifty Next 50 (20%)", "Nifty Midcap 100 (15%)", "Nifty IT (15%)", "Gold ETF (10%)"]
-        stocks = ["Reliance (Jio AI)", "ICICI Bank (Digital Ops)", "Oracle Financial (Banking AI)", "L&T (Infra/Digital)", "Tata Elxsi (Design AI)"]
-        ret = 0.14  # 14% Expected CAGR
+        indices = [
+            "Nifty 50 Index (40%)",
+            "Nifty Next 50 (20%)",
+            "Nifty Midcap 100 (20%)",
+            "Nifty IT Index (10%)",
+            "Gold ETF (10%)"
+        ]
+        stocks = [
+            "Reliance Industries (Jio AI Ecosystem)",
+            "Tata Elxsi (AI Design Engineering)",
+            "Oracle Financial Services (Banking AI)",
+            "Larsen & Toubro (Data Center Infra)",
+            "ICICI Bank (Digital Transformation)"
+        ]
+        annual_return = 0.14 # 14% Target
+        sip_weight = 0.6     # 60% SIP, 40% Lumpsum
+        
     else: # Conservative
-        # Focus: High Cash Flow & Stability
-        indices = ["Nifty 50 Index (60%)", "Gold ETF (15%)", "Nifty Low Volatility 30 (10%)", "Liquid Fund (10%)", "Nifty Pharma (5%)"]
-        stocks = ["TCS (Large Cap AI)", "HDFC Bank (Institutional)", "Bosch (Industrial AI)", "HUL (Defensive)", "Asian Paints (Stability)"]
-        ret = 0.11  # 11% Expected CAGR
-    return indices, stocks, ret
+        indices = [
+            "Nifty 50 Index (60%)",
+            "Gold ETF (15%)",
+            "Nifty Low Volatility 30 (10%)",
+            "Liquid Fund (10%)",
+            "Nifty Pharma Index (5%)"
+        ]
+        stocks = [
+            "TCS (AI Services Leader)",
+            "Bosch Ltd (Industrial AI)",
+            "HDFC Bank (Institutional Strength)",
+            "Hindustan Unilever (Consumer Base)",
+            "Asian Paints (Stability)"
+        ]
+        annual_return = 0.11 # 11% Target
+        sip_weight = 0.8     # 80% SIP, 20% Lumpsum
+        
+    return indices, stocks, annual_return, sip_weight
 
-# --- INTERFACE ---
-st.subheader("🤖 AI Capital Allocation Engine")
+# --- 3. UI LAYOUT ---
+st.title("⚡ QUANTUM NSE: AI Capital Planner")
+st.write("---")
 
-col_a, col_b = st.columns([1, 1.5])
+col_input, col_display = st.columns([1, 2])
 
-with col_a:
-    total_cap = st.number_input("Total Capital to Deploy (₹)", min_value=10000, value=100000, step=10000)
+with col_input:
+    st.subheader("Investment Parameters")
+    total_capital = st.number_input("Total Capital to Invest (₹)", min_value=10000, value=100000, step=5000)
     horizon = st.select_slider("Time Horizon", options=[1, 3, 5], format_func=lambda x: f"{x} Year{'s' if x > 1 else ''}")
     risk = st.select_slider("Risk Appetite", options=["Conservative", "Moderate", "Aggressive"])
+    
+    # Calculate Ratios
+    indices, stocks, exp_return, sip_w = get_ai_engine_data(risk)
+    lump_w = 1 - sip_w
+    
+    sip_total_pool = total_capital * sip_w
+    lump_total_pool = total_capital * lump_w
+    monthly_sip_val = sip_total_pool / (horizon * 12)
 
-    # Allocation Logic
-    ratio_sip = 0.8 if risk == "Conservative" else (0.6 if risk == "Moderate" else 0.4)
-    ratio_lump = 1 - ratio_sip
+with col_display:
+    st.subheader(f"Allocation Strategy: {risk}")
     
-    indices, stocks, exp_return = get_recommendations(risk)
-    
-    sip_total = total_cap * ratio_sip
-    lump_total = total_cap * ratio_lump
-    monthly_sip = sip_total / (horizon * 12)
-
-with col_b:
-    st.markdown(f"### Strategy: {risk} AI Allocation")
-    
-    # SIP Equation & Diversification
-    st.markdown(f"**Monthly SIP = ₹{monthly_sip:,.0f}**")
-    st.caption(f"Top 5 Index/Fund Recommendations for {risk} Profile:")
-    for i in indices:
-        st.write(f"🔹 {i}")
-    
-    st.divider()
-    
-    # Lumpsum Equation & Diversification
-    st.markdown(f"**Stock Lumpsum = ₹{lump_total:,.0f}**")
-    st.caption(f"Top 5 AI & Value Chain Stocks for {risk} Profile:")
-    st.success(", ".join(stocks))
-
-    # PROJECTION CALCULATION
-    n = horizon * 12
-    r_m = exp_return / 12
-    # FV of SIP + FV of Lumpsum
-    fv_sip = monthly_sip * (((1 + r_m)**n - 1) / r_m) * (1 + r_m)
-    fv_lump = lump_total * (1 + exp_return)**horizon
-    total_fv = fv_sip + fv_lump
-    
-    st.divider()
+    # --- SIP EQUATION ---
     st.markdown(f"""
-        <div style="background:#0d1117; border:1px solid #c8a45e33; padding:20px; border-radius:12px">
-            <small style="color:#888">APPROXIMATE MATURITY VALUE ({horizon}Y)</small><br>
-            <span style="font-size:32px; color:#c8a45e; font-weight:bold">₹{total_fv:,.0f}</span><br>
-            <small style="color:#00ff00">Est. Growth: +₹{total_fv - total_cap:,.0f} ({((total_fv/total_cap)-1)*100:.1f}%)</small>
-        </div>
+    <div class="equation-box">
+        <span style="color:#888"># SIP ALLOCATION ENGINE</span><br>
+        Monthly SIP = (₹{monthly_sip_val:,.0f}) Index Recommendation ({risk})
+    </div>
     """, unsafe_allow_html=True)
+    
+    st.write("**Top 5 Diversified Indices:**")
+    cols_idx = st.columns(2)
+    for idx, name in enumerate(indices):
+        cols_idx[idx % 2].markdown(f'<div class="reco-card">🔹 {name}</div>', unsafe_allow_html=True)
+
+    st.write("---")
+
+    # --- LUMPSUM EQUATION ---
+    st.markdown(f"""
+    <div class="equation-box">
+        <span style="color:#888"># LUMPSUM ALLOCATION ENGINE</span><br>
+        Stock Lumpsum = (₹{lump_total_pool:,.0f}) Stock Recommendation ({risk})
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.write("**Top 5 AI-Driven Stock Picks:**")
+    st.success(" | ".join(stocks))
+
+# --- 4. RETURNS CALCULATION ---
+st.write("---")
+st.subheader("📈 Approximate Returns Projection")
+
+# Compound Interest Formula for SIP + Lumpsum
+n_months = horizon * 12
+monthly_rate = exp_return / 12
+
+# FV of SIP = P * [((1 + r)^n - 1) / r] * (1 + r)
+fv_sip = monthly_sip_val * (((1 + monthly_rate)**n_months - 1) / monthly_rate) * (1 + monthly_rate)
+# FV of Lumpsum = P * (1 + r)^t
+fv_lumpsum = lump_total_pool * (1 + exp_return)**horizon
+
+total_final = fv_sip + fv_lumpsum
+net_profit = total_final - total_capital
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("Expected Maturity Value", f"₹{total_final:,.0f}")
+with c2:
+    st.metric("Net Gain", f"₹{net_profit:,.0f}", f"{exp_return*100:.1f}% Est. CAGR")
+with c3:
+    st.metric("Timeframe", f"{horizon} Years")
+
+st.info("💡 **AI Analyst Note:** These recommendations are based on May 2026 market leadership in AI infrastructure and high-growth momentum. Always review with a financial advisor before deploying capital.")
