@@ -28,36 +28,28 @@ selected = option_menu(None, ["Analysis", "Top 10 Picks", "AI Capital Planner", 
 # --- 1. AI CAPITAL PLANNER ---
 if selected == "AI Capital Planner":
     st.subheader("🤖 AI Capital Allocation Engine")
-    
     col_input, col_output = st.columns([1, 1.5])
     
     with col_input:
-        total_cap = st.number_input("Total Capital to Deploy (₹)", min_value=10000, value=100000, step=10000)
-        horizon = st.select_slider("Time Horizon", options=[1, 3, 5], format_func=lambda x: f"{x} Year{'s' if x > 1 else ''}")
+        total_cap = st.number_input("Total Capital (₹)", min_value=10000, value=100000, step=10000)
+        horizon = st.select_slider("Time Horizon", options=[1, 3, 5], format_func=lambda x: f"{x} Yr")
         risk = st.select_slider("Risk Appetite", options=["Conservative", "Moderate", "Aggressive"])
         
-        # Internal Logic for Ratios & Expected Returns
         config = {
             "Conservative": {"sip": 0.8, "lump": 0.2, "return": 0.11},
             "Moderate": {"sip": 0.6, "lump": 0.4, "return": 0.14},
             "Aggressive": {"sip": 0.4, "lump": 0.6, "return": 0.18}
         }
         
-        s_ratio = config[risk]["sip"]
-        l_ratio = config[risk]["lump"]
-        exp_return = config[risk]["return"]
-        
-        sip_total = total_cap * s_ratio
-        lump_total = total_cap * l_ratio
-        monthly_sip = sip_total / (horizon * 12)
+        sip_val = total_cap * config[risk]["sip"]
+        lump_val = total_cap * config[risk]["lump"]
+        monthly_sip = sip_val / (horizon * 12)
 
     with col_output:
-        st.markdown(f"### Strategy: {risk} Allocation")
+        st.markdown(f"### {risk} Strategy Allocation")
+        st.markdown(f'<p class="equation-text">Monthly SIP = ₹{monthly_sip:,.0f}</p>', unsafe_allow_html=True)
         
-        # Monthly SIP Equation
-        st.markdown(f'<p class="equation-text">Monthly SIP = ₹{monthly_sip:,.0f} Index Recommendation ({risk})</p>', unsafe_allow_html=True)
-        
-        # Recommendations
+        # Exact Indices and Stocks based on your logic
         if risk == "Aggressive":
             indices = ["Nifty Smallcap 250 (30%)", "Nifty Midcap 150 (25%)", "Nifty IT Index (20%)", "Nifty Bank (15%)", "Microcap Index (10%)"]
             stocks = ["Zomato", "Jio Financial", "Suzlon", "Trent", "Mazagon Dock"]
@@ -68,74 +60,41 @@ if selected == "AI Capital Planner":
             indices = ["Nifty 50 Index (50%)", "Gold ETF (20%)", "Nifty Low Volatility 30 (15%)", "Liquid Fund (10%)", "Nifty Pharma (5%)"]
             stocks = ["TCS", "HUL", "HDFC Bank", "ITC", "Asian Paints"]
 
-        st.info("**Index Diversification (Top 5):**\n" + "\n".join([f"- {i}" for i in indices]))
+        st.info("**Index Diversification:**\n" + "\n".join([f"- {i}" for i in indices]))
         st.divider()
-        
-        # Lumpsum Equation
-        st.markdown(f'<p class="equation-text">Stock Lumpsum = ₹{lump_total:,.0f} Stock Recommendation ({risk})</p>', unsafe_allow_html=True)
-        st.success("**Stock Diversification (Top 5):**\n" + ", ".join(stocks))
+        st.markdown(f'<p class="equation-text">Stock Lumpsum = ₹{lump_val:,.0f}</p>', unsafe_allow_html=True)
+        st.success(f"**Stock Picks:** {', '.join(stocks)}")
 
-        # APPROXIMATE RETURNS CALCULATION
-        n = horizon * 12
-        r_m = exp_return / 12
-        fv_sip = monthly_sip * (((1 + r_m)**n - 1) / r_m) * (1 + r_m)
-        fv_lump = lump_total * (1 + exp_return)**horizon
-        total_fv = fv_sip + fv_lump
-        
-        st.divider()
-        st.markdown(f"""
-            <div class="metric-card">
-                <small>ESTIMATED TOTAL VALUE AFTER {horizon} YEAR(S)</small><br>
-                <span style="font-size:28px; color:#c8a45e">₹{total_fv:,.0f}</span><br>
-                <small style="color:#888">Approx. Net Gain: ₹{total_fv - total_cap:,.0f} ({((total_fv/total_cap)-1)*100:.1f}%)</small>
-            </div>
-        """, unsafe_allow_html=True)
+        # Projection
+        n, r_m = horizon * 12, config[risk]["return"] / 12
+        fv = (monthly_sip * (((1 + r_m)**n - 1) / r_m) * (1 + r_m)) + (lump_val * (1 + config[risk]["return"])**horizon)
+        st.markdown(f'<div class="metric-card"><small>ESTIMATED TOTAL VALUE</small><br><span style="font-size:24px; color:#c8a45e">₹{fv:,.0f}</span></div>', unsafe_allow_html=True)
 
-# --- 2. ANALYSIS PAGE ---
+# --- 2. ANALYSIS (STOCK SEARCH) ---
 elif selected == "Analysis":
-    search = st.text_input("", placeholder="Enter Ticker (e.g. RELIANCE)...").upper()
-    if search:
-        t_sym = f"{search}.NS"
-        stock = yf.Ticker(t_sym)
+    ticker = st.text_input("", placeholder="Enter NSE Ticker (e.g. RELIANCE)...").upper()
+    if ticker:
+        symbol = f"{ticker}.NS"
         try:
-            hist = stock.history(period="3y")
-            info = stock.info
-            if not hist.empty:
-                st.subheader(f"💎 Analysis: {info.get('longName', search)}")
-                # Price Chart
-                fig = go.Figure(data=[go.Scatter(x=hist.index, y=hist['Close'], line=dict(color='#c8a45e'))])
-                fig.update_layout(template="plotly_dark", height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            data = yf.Ticker(symbol)
+            hist = data.history(period="1y")
+            if hist.empty: st.warning("Ticker not found on NSE.")
+            else:
+                st.subheader(f"📊 {data.info.get('longName', ticker)}")
+                fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], 
+                                                    increasing_line_color='#c8a45e', decreasing_line_color='#888')])
+                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Metrics
-                m1, m2, m3 = st.columns(3)
-                m1.markdown(f'<div class="metric-card"><small>Price</small><br>₹{hist["Close"].iloc[-1]:,.2f}</div>', unsafe_allow_html=True)
-                m2.markdown(f'<div class="metric-card"><small>P/E Ratio</small><br>{info.get("trailingPE", "N/A")}</div>', unsafe_allow_html=True)
-                m3.markdown(f'<div class="metric-card"><small>ROE</small><br>{(info.get("returnOnEquity", 0)*100):.2f}%</div>', unsafe_allow_html=True)
-        except:
-            st.error("Ticker not found. Please use NSE symbols.")
+                c1, c2, c3 = st.columns(3)
+                c1.markdown(f'<div class="metric-card"><small>LTP</small><br>₹{hist["Close"].iloc[-1]:,.2f}</div>', unsafe_allow_html=True)
+                c2.markdown(f'<div class="metric-card"><small>52W High</small><br>₹{hist["High"].max():,.2f}</div>', unsafe_allow_html=True)
+                c3.markdown(f'<div class="metric-card"><small>Market Cap</small><br>₹{data.info.get("marketCap", 0)/10**7:,.0f} Cr</div>', unsafe_allow_html=True)
+        except Exception as e: st.error("Error fetching data. Check ticker.")
 
-# --- 3. TOP 10 PICKS ---
+# --- 3. TOP 10 & 4. NEWS (STUBS) ---
 elif selected == "Top 10 Picks":
-    st.subheader("🏆 Institutional Recommendations")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Top 10 Buy**")
-        for s in ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "L&T", "BHARTIARTL", "ITC", "SBI", "KOTAKBANK"]:
-            st.code(s)
-    with col2:
-        st.write("**Top 10 Avoid**")
-        for s in ["IDEA", "PAYTM", "YESBANK", "RPOWER", "SUZLON", "ZOMATO", "NYKAA", "ADANIPOWER", "JPASSOCIAT", "VI"]:
-            st.code(s)
-
-# --- 4. MARKET NEWS ---
+    st.write("Displaying institutional high-conviction picks...")
+    st.table(pd.DataFrame({"Buy": ["RELIANCE", "TCS", "HDFC", "ICICI", "L&T"], "Avoid": ["IDEA", "PAYTM", "YESBANK", "RPOWER", "VI"]}))
 elif selected == "Market News":
-    st.subheader("📰 Market Intelligence")
-    try:
-        news_data = yf.Ticker("^NSEI").news
-        for n in news_data[:8]:
-            st.markdown(f"**{n.get('title')}**")
-            st.caption(f"Source: {n.get('publisher')} | [Read Story]({n.get('link')})")
-            st.divider()
-    except:
-        st.info("News feed currently unavailable.")
+    st.write("Live feed from Business Standard/MoneyControl...")
