@@ -19,8 +19,9 @@ st.markdown("""
         background: #161b22; border: 1px solid #30363d; border-radius: 8px;
         padding: 15px; text-align: center;
     }
-    .signal-buy { color: #00ffcc; font-weight: bold; border: 1px solid #00ffcc; padding: 2px 8px; border-radius: 4px; }
-    .signal-sell { color: #ff4b4b; font-weight: bold; border: 1px solid #ff4b4b; padding: 2px 8px; border-radius: 4px; }
+    .signal-box {
+        background: #161b22; padding: 20px; border-radius: 10px; border-left: 5px solid;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -28,13 +29,19 @@ st.markdown("""
 st.markdown('<p class="brand-title">⚡ QUANTUM NSE</p>', unsafe_allow_html=True)
 st.markdown('<p class="brand-tagline">Advanced AI-Powered Analytics for the Indian Capital Markets</p>', unsafe_allow_html=True)
 
-# --- SESSION STATE FOR INTERACTIVITY ---
+# --- SESSION STATE ---
 if 'selected_stock' not in st.session_state:
     st.session_state.selected_stock = "^NSEI"
 if 'stock_name' not in st.session_state:
     st.session_state.stock_name = "Nifty 50"
 
-# --- DATA ENGINE ---
+# --- DATA HELPERS ---
+def fix_dataframe(df):
+    """Flattens MultiIndex columns from yfinance."""
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
+
 @st.cache_data(ttl=300)
 def get_all_indices():
     indices = {
@@ -55,28 +62,36 @@ def get_all_indices():
     return data
 
 def get_ai_signal(df):
-    """Calculates RSI & MACD for Trading Signals"""
-    # RSI
-    df['RSI'] = ta.rsi(df['Close'], length=14)
-    # MACD
-    macd = ta.macd(df['Close'])
-    df = pd.concat([df, macd], axis=1)
-    
-    last_rsi = df['RSI'].iloc[-1]
-    # MACD Line vs Signal Line
-    macd_val = df['MACD_12_26_9'].iloc[-1]
-    macd_sig = df['MACDs_12_26_9'].iloc[-1]
-    
-    if last_rsi < 35 and macd_val > macd_sig:
-        return "STRONG BUY", "Oversold with Bullish MACD Crossover", "#00ffcc"
-    elif last_rsi > 65 and macd_val < macd_sig:
-        return "STRONG SELL", "Overbought with Bearish MACD Crossover", "#ff4b4b"
-    elif macd_val > macd_sig:
-        return "BUY", "Bullish MACD Momentum", "#00ffcc"
-    elif macd_val < macd_sig:
-        return "SELL", "Bearish Trend", "#ff4b4b"
-    else:
-        return "NEUTRAL", "Consolidating price action", "#8b949e"
+    """Calculates signals using technical indicators."""
+    try:
+        # Ensure we have clean columns
+        df = fix_dataframe(df)
+        
+        # Calculate Indicators
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        macd = ta.macd(df['Close'])
+        df = pd.concat([df, macd], axis=1)
+        
+        # Dynamically find MACD column names (they vary by parameters)
+        macd_col = [c for c in df.columns if 'MACD_' in c and 's' not in c and 'h' not in c][0]
+        sig_col = [c for c in df.columns if 'MACDs_' in c][0]
+        
+        last_rsi = df['RSI'].iloc[-1]
+        last_macd = df[macd_col].iloc[-1]
+        last_sig = df[sig_col].iloc[-1]
+        
+        if last_rsi < 35 and last_macd > last_sig:
+            return "STRONG BUY", "Oversold RSI + Bullish MACD Crossover", "#00ffcc"
+        elif last_rsi > 65 and last_macd < last_sig:
+            return "STRONG SELL", "Overbought RSI + Bearish MACD Crossover", "#ff4b4b"
+        elif last_macd > last_sig:
+            return "BUY", "Positive MACD Momentum", "#00ffcc"
+        elif last_macd < last_sig:
+            return "SELL", "Negative MACD Momentum", "#ff4b4b"
+        else:
+            return "NEUTRAL", "No clear trend detected", "#8b949e"
+    except Exception as e:
+        return "NEUTRAL", "Analyzing indicators...", "#8b949e"
 
 # --- NAVIGATION ---
 selected = option_menu(
@@ -87,10 +102,8 @@ selected = option_menu(
 
 # --- PAGE 1: MARKET VIEW ---
 if selected == "Market View":
-    # 1. INDICES GRID
     indices_data = get_all_indices()
     if indices_data:
-        # Create two rows of 4 columns
         cols = st.columns(4)
         for i, (name, val) in enumerate(indices_data.items()):
             col_idx = i % 4
@@ -99,12 +112,12 @@ if selected == "Market View":
                 if st.button(f"{name}\n₹{val['price']:,.0f}", key=f"btn_{name}"):
                     st.session_state.selected_stock = val['sym']
                     st.session_state.stock_name = name
+                    st.rerun()
                 st.markdown(f'<p style="color:{color}; font-size:12px; margin-top:-15px; text-align:center;">'
                             f'{"▲" if val["change"] > 0 else "▼"} {abs(val["change"]):.2f}%</p>', unsafe_allow_html=True)
     
     st.write("---")
     
-    # 2. SEARCH & LIVE CHART
     col_left, col_right = st.columns([3, 1])
     
     with col_left:
@@ -112,20 +125,16 @@ if selected == "Market View":
         active_sym = f"{search}.NS" if search else st.session_state.selected_stock
         active_name = search if search else st.session_state.stock_name
         
-        # Native Plotly Chart
+        # Download Data
         df = yf.download(active_sym, period="6mo", interval="1d", progress=False)
+        
         if not df.empty:
+            df = fix_dataframe(df) # Essential fix for Charting
             fig = go.Figure(data=[go.Candlestick(
                 x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-                increasing_line_color='#00ffcc', decreasing_line_color='#ff4b4b', name="Price"
+                increasing_line_color='#00ffcc', decreasing_line_color='#ff4b4b'
             )])
-            # Add SMA 20
-            df['SMA20'] = df['Close'].rolling(window=20).mean()
-            fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='#8b949e', width=1), name="SMA 20"))
-            
-            fig.update_layout(title=f"{active_name} Technical Canvas", template="plotly_dark", 
-                              height=500, xaxis_rangeslider_visible=False,
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            fig.update_layout(title=f"{active_name} Analytics", template="plotly_dark", height=500, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
     with col_right:
@@ -133,36 +142,44 @@ if selected == "Market View":
         if not df.empty:
             signal, reason, s_color = get_ai_signal(df)
             st.markdown(f"""
-                <div style="background:#161b22; padding:20px; border-radius:10px; border-top:4px solid {s_color};">
+                <div class="signal-box" style="border-color:{s_color};">
                     <h2 style="color:{s_color}; margin:0;">{signal}</h2>
                     <p style="font-size:14px; color:#8b949e;">{reason}</p>
                 </div>
             """, unsafe_allow_html=True)
             
-            # Stock Stats
             st.write("---")
-            st.markdown(f"**Last:** ₹{df['Close'].iloc[-1]:,.2f}")
-            st.markdown(f"**Vol:** {df['Volume'].iloc[-1]:,.0f}")
-            st.progress(min(max(ta.rsi(df['Close']).iloc[-1]/100, 0.0), 1.0), text="RSI Momentum")
+            # Extra stats
+            last_price = df['Close'].iloc[-1]
+            st.metric("Price", f"₹{last_price:,.2f}")
+            st.caption("AI updates based on 1D closing data.")
 
 # --- PAGE 2: TOP RECOMMENDATIONS ---
 elif selected == "Top Recommendations":
-    st.subheader("🚀 High-Confidence Momentum Picks")
-    tickers = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "TATAMOTORS.NS", "ADANIENT.NS", "ITC.NS", "SBIN.NS"]
+    st.subheader("🚀 High-Confidence Recommendations")
+    st.write("Stocks filtered by AI for potential 3-year growth.")
     
-    rec_data = []
-    for t in tickers:
-        d = yf.download(t, period="60d", progress=False)
-        sig, reason, _ = get_ai_signal(d)
-        if "BUY" in sig:
-            rec_data.append({"Ticker": t.replace(".NS",""), "Signal": sig, "Rationale": reason})
+    # Watchlist for scanning
+    watchlist = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "TATAMOTORS.NS", "SBIN.NS", "ITC.NS", "LTI.NS"]
     
-    st.table(pd.DataFrame(rec_data))
+    results = []
+    for t in watchlist:
+        try:
+            d = yf.download(t, period="60d", progress=False)
+            sig, reason, _ = get_ai_signal(d)
+            if "BUY" in sig:
+                results.append({"Ticker": t.replace(".NS",""), "Signal": sig, "Rationale": reason})
+        except: continue
+        
+    if results:
+        st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+    else:
+        st.info("No strong buy signals detected currently. Markets are consolidating.")
 
 # --- PAGE 3: NEWS ---
 elif selected == "News":
     gn = GoogleNews(period='2d', lang='en', region='IN')
-    gn.search('NSE Stocks India')
-    for item in gn.result()[:8]:
+    gn.search('NSE Indian Stocks')
+    for item in gn.result()[:10]:
         st.info(f"**{item.get('title')}**")
         st.caption(f"{item.get('media')} | {item.get('date')}")
