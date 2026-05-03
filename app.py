@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
 
 # --- UI CONFIGURATION ---
+# Force wide mode to use the full screen width
 st.set_page_config(page_title="QUANTUM NSE | AI Terminal", layout="wide", initial_sidebar_state="collapsed")
 
 # --- CUSTOM CSS (THE GOLD STANDARD THEME) ---
@@ -34,6 +35,12 @@ st.markdown("""
     
     .stButton>button { border-color: #c8a45e33 !important; color: #c8a45e !important; background-color: #0d1117 !important; transition: 0.3s; }
     .stButton>button:hover { border-color: #c8a45e !important; color: #ffffff !important; background-color: #c8a45e22 !important; }
+    
+    /* Ensuring responsiveness on small screens */
+    @media (max-width: 768px) {
+        .logo-text { font-size: 30px; }
+        .metric-card { margin-bottom: 10px; }
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -102,6 +109,9 @@ if selected == "Analysis":
         info = stock.info
         hist = stock.history(period="3y")
         if not hist.empty:
+            # Use responsive columns for core info
+            col_price, col_metric = st.columns(2)
+            
             current_price = hist['Close'].iloc[-1]
             pe, peg, debt_to_equity = info.get('trailingPE', 0), info.get('pegRatio', 0), info.get('debtToEquity', 0)
             roe, sector, industry = info.get('returnOnEquity', 0) * 100, info.get('sector', 'Unknown'), info.get('industry', 'Unknown')
@@ -111,11 +121,13 @@ if selected == "Analysis":
             score = sum([20 if pe < 25 else 0, 20 if roe > 15 else 0, 20 if (debt_to_equity/100) < 1 else 0, 20 if 0.8 <= peg <= 1.2 else 0, 20 if sentiment == "Bullish" else 0])
             
             st.subheader(f"💎 Analysis: {info.get('longName', search)}")
-            c1, c2, c3 = st.columns(3)
-            c1.markdown(f'<div class="metric-card"><small>Current Price</small><br><span style="font-size:24px; color:#c8a45e">₹{current_price:,.2f}</span></div>', unsafe_allow_html=True)
-            c2.markdown(f'<div class="metric-card"><small>Health Score</small><br><span style="font-size:24px; color:#c8a45e">{score}/100</span></div>', unsafe_allow_html=True)
-            v_color = "#c8a45e" if valuation == "Undervalued" else "#ff4b4b"
-            c3.markdown(f'<div class="metric-card"><small>Valuation</small><br><span style="font-size:24px; color:{v_color}">{valuation}</span></div>', unsafe_allow_html=True)
+            
+            with col_price:
+                st.markdown(f'<div class="metric-card"><small>Current Price</small><br><span style="font-size:24px; color:#c8a45e">₹{current_price:,.2f}</span></div>', unsafe_allow_html=True)
+            with col_metric:
+                st.markdown(f'<div class="metric-card"><small>Health Score</small><br><span style="font-size:24px; color:#c8a45e">{score}/100</span></div>', unsafe_allow_html=True)
+            
+            st.markdown(f'<div class="metric-card" style="margin-top:10px"><small>Valuation</small><br><span style="font-size:24px; color:{"#c8a45e" if valuation == "Undervalued" else "#ff4b4b"}">{valuation}</span></div>', unsafe_allow_html=True)
 
             st.subheader("📊 Revenue & Profit Growth")
             try:
