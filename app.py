@@ -39,29 +39,20 @@ st.markdown("""
 # --- DATA ENGINES ---
 @st.cache_data(ttl=600)
 def get_index_data():
-    indices = {
-        "NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "SENSEX": "^BSESN",
-        "NIFTY IT": "^CNXIT", "NIFTY AUTO": "^CNXAUTO", "NIFTY PHARMA": "^CNXPHARMA"
-    }
+    indices = {"NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "SENSEX": "^BSESN", "NIFTY IT": "^CNXIT", "NIFTY AUTO": "^CNXAUTO", "NIFTY PHARMA": "^CNXPHARMA"}
     data = {}
     for name, sym in indices.items():
         try:
             ticker = yf.Ticker(sym)
             hist = ticker.history(period="5d")
             if len(hist) >= 2:
-                price = hist['Close'].iloc[-1]
-                change = ((price - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
+                price, change = hist['Close'].iloc[-1], ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
                 data[name] = (price, change, sym)
         except: continue
     return data
 
 # --- BRANDING ---
-st.markdown("""
-    <div class="brand-container">
-        <div class="logo-text">⚡ QUANTUM NSE</div>
-        <div class="branding-tagline">"Precision Intelligence for the Modern Indian Investor."</div>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown('<div class="brand-container"><div class="logo-text">⚡ QUANTUM NSE</div><div class="branding-tagline">"Precision Intelligence for the Modern Indian Investor."</div></div>', unsafe_allow_html=True)
 
 # --- INDEX TICKER TAPE ---
 idx_data = get_index_data()
@@ -73,35 +64,17 @@ if idx_data:
             st.session_state.idx_display_name = name
 
 # --- NAVIGATION ---
-selected = option_menu(None, ["Analysis", "Top 10 Picks", "Market News"], 
-    icons=["search", "trophy", "newspaper"], orientation="horizontal",
-    styles={
-        "container": {"background-color": "#0d1117", "padding": "0!important", "border": "1px solid #c8a45e22"},
-        "nav-link": {"color": "#888", "font-size": "14px"},
-        "nav-link-selected": {"background-color": "#c8a45e", "color": "#05070a", "font-weight": "bold"}
-    })
+selected = option_menu(None, ["Analysis", "Top 10 Picks", "AI Capital Planner", "Market News"], 
+    icons=["search", "trophy", "calculator", "newspaper"], orientation="horizontal",
+    styles={"container": {"background-color": "#0d1117", "border": "1px solid #c8a45e22"},
+            "nav-link-selected": {"background-color": "#c8a45e", "color": "#05070a", "font-weight": "bold"}})
 
-# --- INDEX 3-YEAR PRICE ACTION DISPLAY ---
+# --- INDEX CHART DISPLAY ---
 if 'selected_index' in st.session_state:
-    st.subheader(f"📈 {st.session_state.idx_display_name}: 3-Year Price Action")
     idx_hist = yf.Ticker(st.session_state.selected_index).history(period="3y")
-    
-    fig_idx = go.Figure(data=[go.Scatter(
-        x=idx_hist.index, 
-        y=idx_hist['Close'], 
-        line=dict(color='#c8a45e', width=2)
-    )])
-    
-    fig_idx.update_layout(
-        template="plotly_dark", 
-        height=400, 
-        paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='#1e222d')
-    )
+    fig_idx = go.Figure(data=[go.Scatter(x=idx_hist.index, y=idx_hist['Close'], line=dict(color='#c8a45e', width=2))])
+    fig_idx.update_layout(template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_idx, use_container_width=True)
-    
     if st.button("Close Index Action"): 
         del st.session_state.selected_index
         st.rerun()
@@ -112,72 +85,56 @@ if selected == "Analysis":
     if search:
         t_sym = f"{search}.NS"
         stock = yf.Ticker(t_sym)
-        info = stock.info
-        hist = stock.history(period="3y")
-        
+        info, hist = stock.info, stock.history(period="3y")
         if not hist.empty:
             current_price = hist['Close'].iloc[-1]
-            pe = info.get('trailingPE', 0)
-            peg = info.get('pegRatio', 0)
-            debt_to_equity = info.get('debtToEquity', 0)
-            roe = info.get('returnOnEquity', 0) * 100
-            sector = info.get('sector', 'Unknown')
-            industry = info.get('industry', 'Unknown')
-            pledged = info.get('pledgedPercent', 0) or 0
-            hold_insider = info.get('heldPercentInsiders', 0) * 100
-            
-            valuation = "Undervalued" if pe < 20 else "Overvalued"
-            ma200 = hist['Close'].rolling(200).mean().iloc[-1]
+            pe, peg, roe, debt_to_equity = info.get('trailingPE', 0), info.get('pegRatio', 0), info.get('returnOnEquity', 0) * 100, info.get('debtToEquity', 0)
+            sector, pledged, hold_insider = info.get('sector', 'Unknown'), info.get('pledgedPercent', 0) or 0, info.get('heldPercentInsiders', 0) * 100
+            valuation, ma200 = ("Undervalued" if pe < 20 else "Overvalued"), hist['Close'].rolling(200).mean().iloc[-1]
             sentiment = "Bullish" if current_price > ma200 else "Bearish"
-            
-            score = 0
-            if pe < 25: score += 20
-            if roe > 15: score += 20
-            if (debt_to_equity/100) < 1: score += 20
-            if 0.8 <= peg <= 1.2: score += 20
-            if sentiment == "Bullish": score += 20
+            score = sum([20 if pe < 25 else 0, 20 if roe > 15 else 0, 20 if (debt_to_equity/100) < 1 else 0, 20 if 0.8 <= peg <= 1.2 else 0, 20 if sentiment == "Bullish" else 0])
             
             st.subheader(f"💎 Analysis: {info.get('longName', search)}")
             c1, c2, c3 = st.columns(3)
             c1.markdown(f'<div class="metric-card"><small>Current Price</small><br><span style="font-size:24px; color:#c8a45e">₹{current_price:,.2f}</span></div>', unsafe_allow_html=True)
             c2.markdown(f'<div class="metric-card"><small>Health Score</small><br><span style="font-size:24px; color:#c8a45e">{score}/100</span></div>', unsafe_allow_html=True)
-            v_color = "#c8a45e" if valuation == "Undervalued" else "#ff4b4b"
-            c3.markdown(f'<div class="metric-card"><small>Valuation</small><br><span style="font-size:24px; color:{v_color}">{valuation}</span></div>', unsafe_allow_html=True)
-
-            st.subheader("📊 Revenue & Profit Growth")
+            c3.markdown(f'<div class="metric-card"><small>Valuation</small><br><span style="font-size:24px; color:{"#c8a45e" if valuation == "Undervalued" else "#ff4b4b"}">{valuation}</span></div>', unsafe_allow_html=True)
+            
             try:
                 fin = stock.financials.T
-                fin_df = pd.DataFrame({
-                    "Year": fin.index.year,
-                    "Net Profit (Cr)": (fin['Net Income'] / 1e7).round(2),
-                    "Growth %": fin['Net Income'].pct_change().fillna(0).apply(lambda x: f"{x*100:+.2f}%")
-                }).reset_index(drop=True)
+                fin_df = pd.DataFrame({"Year": fin.index.year, "Net Profit (Cr)": (fin['Net Income'] / 1e7).round(2), "Growth %": fin['Net Income'].pct_change().fillna(0).apply(lambda x: f"{x*100:+.2f}%")}).reset_index(drop=True)
                 st.table(fin_df)
-            except: st.error("Growth data unavailable.")
-
-            st.subheader("🔍 Vital Signal Audit")
-            r1, r2, r3, r4 = st.columns(4)
-            d_val = debt_to_equity / 100
-            is_bank_infra = any(x in sector.lower() for x in ['bank', 'financial', 'infra', 'construction'])
-            d_color = "#c8a45e" if (is_bank_infra and d_val <= 3) or (not is_bank_infra and d_val <= 1) else "#ff4b4b"
+            except: st.error("Financials unavailable.")
             
-            r1.markdown(f'<div class="metric-card"><small>Debt-to-Equity</small><br><span style="color:{d_color}; font-size:20px">{d_val:.2f}</span></div>', unsafe_allow_html=True)
-            r2.markdown(f'<div class="metric-card"><small>ROE</small><br><span style="color:{"#c8a45e" if roe >= 15 else "#ff4b4b"}; font-size:20px">{roe:.2f}%</span></div>', unsafe_allow_html=True)
-            r3.markdown(f'<div class="metric-card"><small>P/E Ratio</small><br><span style="color:{"#c8a45e" if pe <= 25 else "#ff4b4b"}; font-size:20px">{pe:.2f}</span></div>', unsafe_allow_html=True)
-            r4.markdown(f'<div class="metric-card"><small>PEG Ratio</small><br><span style="color:{"#c8a45e" if 0.8 <= peg <= 1.2 else "#ff4b4b"}; font-size:20px">{peg:.2f}</span></div>', unsafe_allow_html=True)
-
-            st.divider()
-            i1, i2, i3 = st.columns(3)
-            i1.markdown(f'<div class="metric-card"><small>Promoter Holding</small><br><span style="color:{"#c8a45e" if pledged < 10 else "#ff4b4b"}; font-size:20px">{hold_insider:.1f}%</span></div>', unsafe_allow_html=True)
-            i2.markdown(f'<div class="metric-card"><small>Industry: {industry}</small><br><span style="color:#c8a45e; font-size:20px">Growing</span></div>', unsafe_allow_html=True)
-            
-            verdict = "BUY" if score >= 70 else "WAIT"
-            i3.markdown(f'<div class="status-box" style="background:{"#c8a45e" if verdict == "BUY" else "#ffcc00"}; color:#0d1117">VERDICT: {verdict}</div>', unsafe_allow_html=True)
-
-            st.subheader("📈 3-Year Price Action")
             fig = go.Figure(data=[go.Scatter(x=hist.index, y=hist['Close'], line=dict(color='#c8a45e'))])
             fig.update_layout(template="plotly_dark", height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
+
+# --- AI CAPITAL PLANNER (NEW 4TH MODULE) ---
+elif selected == "AI Capital Planner":
+    st.subheader("🤖 Quantum AI Capital Allocation")
+    col_a, col_b = st.columns([1, 2])
+    
+    with col_a:
+        amt = st.number_input("Investment Amount (₹)", min_value=5000, value=50000, step=5000)
+        horizon = st.radio("Time Horizon", [3, 5], format_func=lambda x: f"{x} Years")
+        risk = st.select_slider("Risk Appetite", options=["Conservative", "Moderate", "Aggressive"])
+        
+    with col_b:
+        st.markdown(f'<div class="metric-card" style="text-align:left"><b>AI Strategy for ₹{amt:,.0f} over {horizon} years:</b><br><br>'
+                    f'70% Allocation: <b>Index SIP (Wealth Compounder)</b><br>'
+                    f'30% Allocation: <b>Satellite Stocks (Alpha Generator)</b></div>', unsafe_allow_html=True)
+        
+        s1, s2 = st.columns(2)
+        sip_amt = (amt * 0.7) / (horizon * 12)
+        stock_pool = amt * 0.3
+        
+        with s1:
+            st.info(f"Monthly SIP: ₹{sip_amt:,.0f}")
+            st.markdown("- **Nifty 50 Index Fund** (40%)\n- **Nifty Next 50** (30%)\n- **Midcap 150 Index** (30%)")
+        with s2:
+            st.success(f"Stock Lumpsum: ₹{stock_pool:,.0f}")
+            st.markdown("- **Reliance** (Bluechip)\n- **TCS** (Cash Rich)\n- **HDFC Bank** (Valuation Play)")
 
 # --- TOP 10 PICKS ---
 elif selected == "Top 10 Picks":
@@ -193,18 +150,13 @@ elif selected == "Top 10 Picks":
 
 # --- NEWS PAGE ---
 elif selected == "Market News":
-    st.subheader("📰 Market Intelligence: Business Standard Focus")
-    news_stock = yf.Ticker("^NSEI")
+    st.subheader("📰 Business Standard Intelligence")
     try:
-        news_data = news_stock.news
-        if news_data:
-            bs_news = [n for n in news_data if "Business Standard" in n.get('publisher', '')]
-            other_news = [n for n in news_data if "Business Standard" not in n.get('publisher', '')]
-            display_news = (bs_news + other_news)[:10]
-            for n in display_news:
-                title, publisher, link = n.get('title', 'N/A'), n.get('publisher', 'N/A'), n.get('link', '#')
-                icon = "⭐" if "Business Standard" in publisher else ""
-                st.markdown(f"{icon} **{title}**")
-                st.caption(f"Source: {publisher} | [Read Story]({link})")
-                st.divider()
-    except Exception as e: st.error(f"Error fetching news: {e}")
+        news_data = yf.Ticker("^NSEI").news
+        bs_news = [n for n in news_data if "Business Standard" in n.get('publisher', '')]
+        other_news = [n for n in news_data if "Business Standard" not in n.get('publisher', '')]
+        for n in (bs_news + other_news)[:10]:
+            st.markdown(f"{'⭐' if 'Business Standard' in n.get('publisher','') else ''} **{n.get('title')}**")
+            st.caption(f"Source: {n.get('publisher')} | [Read Story]({n.get('link')})")
+            st.divider()
+    except: st.info("News feed currently unavailable.")
